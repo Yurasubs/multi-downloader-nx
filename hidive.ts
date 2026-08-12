@@ -971,7 +971,7 @@ export default class Hidive implements ServiceClass {
 						let commandVideo = commandBase + `"${tempTsFile}.video.enc.m4s" "${tempTsFile}.video.m4s"`;
 
 						if (this.cfg.bin.shaka) {
-							commandBase = ` --enable_raw_key_decryption ${encryptionKeys.map((kb) => '--keys key_id=' + kb.kid + ':key=' + kb.key).join(' ')}`;
+							commandBase = ` --enable_raw_key_decryption ${encryptionKeys && encryptionKeys.length > 0 ? `--keys "${encryptionKeys.map((kb, i) => `label=KEY${i + 1}:key_id=${kb.kid}:key=${kb.key}`).join(',')}"`:''}`;
 							commandVideo = `input="${tempTsFile}.video.enc.m4s",stream=video,output="${tempTsFile}.video.m4s"` + commandBase;
 						}
 
@@ -1066,7 +1066,7 @@ export default class Hidive implements ServiceClass {
 						let commandAudio = commandBase + `"${tempTsFile}.audio.enc.m4s" "${tempTsFile}.audio.m4s"`;
 
 						if (this.cfg.bin.shaka) {
-							commandBase = ` --enable_raw_key_decryption ${encryptionKeys.map((kb) => '--keys key_id=' + kb.kid + ':key=' + kb.key).join(' ')}`;
+							commandBase = ` --enable_raw_key_decryption ${encryptionKeys && encryptionKeys.length > 0 ? `--keys "${encryptionKeys.map((kb, i) => `label=KEY${i + 1}:key_id=${kb.kid}:key=${kb.key}`).join(',')}"`:''}`;
 							commandAudio = `input="${tempTsFile}.audio.enc.m4s",stream=audio,output="${tempTsFile}.audio.m4s"` + commandBase;
 						}
 
