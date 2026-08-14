@@ -2388,8 +2388,8 @@ export default class Crunchy implements ServiceClass {
 						) {
 							console.info('Decryption Needed, attempting to decrypt');
 							if (this.cfg.bin.mp4decrypt || this.cfg.bin.shaka) {
-								let commandBaseVideo = `--show-progress --key ${encryptionKeysVideo?.[0].kid}:${encryptionKeysVideo?.[0].key} `;
-								let commandBaseAudio = `--show-progress --key ${encryptionKeysAudio?.[0].kid}:${encryptionKeysAudio?.[0].key} `;
+								let commandBaseVideo = `--show-progress ${encryptionKeysVideo?.map((kb) => `--key ${kb.kid}:${kb.key}`).join(' ')} `;
+								let commandBaseAudio = `--show-progress ${encryptionKeysAudio?.map((kb) => `--key ${kb.kid}:${kb.key}`).join(' ')} `;
 								let commandVideo = commandBaseVideo + `"${tempTsFile}.video.enc.m4s" "${tempTsFile}.video.m4s"`;
 								let commandAudio = commandBaseAudio + `"${tempTsFile}.audio.enc.m4s" "${tempTsFile}.audio.m4s"`;
 
