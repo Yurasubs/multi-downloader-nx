@@ -1,6 +1,9 @@
 name: Release Builds
 
 on:
+    push:
+        branches: [master]
+    workflow_dispatch:
     release:
         types: [published]
 
@@ -103,7 +106,15 @@ jobs:
                   echo PACKAGE_VERSION=$(node -p -e "require('./package.json').version") >> $GITHUB_ENV || exit 1
             - name: Make build
               run: bun run build-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}
+            - name: Upload Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}
+                  path: |
+                      ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z
+                      ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z.sha256
             - name: Upload assets to the GitHub Release
+              if: github.event_name == 'release'
               uses: softprops/action-gh-release@v2
               with:
                   files: |
@@ -111,6 +122,7 @@ jobs:
                       ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z.sha256
                   fail_on_unmatched_files: true
     build-docker:
+        if: github.event_name == 'release'
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v6
