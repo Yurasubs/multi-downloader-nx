@@ -208,6 +208,12 @@ Select a specific Crunchyroll video playback endpoint by device. androidtv provi
 | Crunchyroll | `--astream ${device}` | `string` | `No`| `--as` | [`androidtv`, `android`, `androidtab`, `none`] | `android`| `astream: ` |
 
 Select a specific Crunchyroll audio playback endpoint by device. android provides the best audio (192 kbps).
+#### `--majin`
+| **Service** | **Usage** | **Type** | **Required** | **Alias** |  **Default** |**cli-default Entry**
+| --- | --- | --- | --- | --- | --- | ---| 
+| Crunchyroll | `--majin ` | `boolean` | `No`| `NaN` | `false`| `majin: ` |
+
+Enable Majin quality mode which transforms stream URLs for higher quality CENC DASH streams.
 #### `--tsd`
 | **Service** | **Usage** | **Type** | **Required** | **Alias** |  **Default** |**cli-default Entry**
 | --- | --- | --- | --- | --- | --- | ---| 
