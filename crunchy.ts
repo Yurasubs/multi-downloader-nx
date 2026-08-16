@@ -1832,6 +1832,37 @@ export default class Crunchy implements ServiceClass {
 					for (const key in derivedPlaystreams) {
 						derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 					}
+				} else {
+					const rawUrl = derivedPlaystreams['']?.url || Object.values(derivedPlaystreams)[0]?.url;
+					if (rawUrl) {
+						const majinUrl = this.applyMajinTransform(rawUrl);
+						const majinReq = await this.req.getData(majinUrl, AuthHeaders);
+						if (majinReq.ok && majinReq.res) {
+							const majinBody = await majinReq.res.text();
+							if (majinBody.includes('MPD')) {
+								const parsedMajin = await parse(
+									majinBody,
+									langsData.findLang(langsData.fixLanguageTag(pbData.meta.audio_locale as string) || ''),
+									majinUrl.match(/.*\.urlset\//)?.[0]
+								);
+								const firstServer = Object.keys(parsedMajin)[0];
+								if (firstServer && parsedMajin[firstServer]?.video) {
+									const hasHighQualityMajin = parsedMajin[firstServer].video.some((v) => {
+										const kbps = Math.round(v.bandwidth / 1024);
+										const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
+										return is1080pPlus && kbps > 7100;
+									});
+									if (hasHighQualityMajin) {
+										console.info('Majin stream available with bitrate > 7100 kbps (1080p+), automatically enabling Majin quality mode');
+										options.majin = true;
+										for (const key in derivedPlaystreams) {
+											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 				pbData.vpb[`adaptive_${options.vstream}_${videoStream.url.includes('m3u8') ? 'hls' : 'dash'}_drm`] = {
 					...derivedPlaystreams
@@ -2136,7 +2167,7 @@ export default class Crunchy implements ServiceClass {
 						});
 
 						videos.sort((a, b) => {
-							return a.quality.width - b.quality.width;
+							return a.quality.width - b.quality.width || a.bandwidth - b.bandwidth;
 						});
 
 						audios.sort((a, b) => {
