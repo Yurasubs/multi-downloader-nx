@@ -1,14 +1,12 @@
-name: Release Builds
+name: Build Artifacts
 
 on:
     push:
         branches: [master]
     workflow_dispatch:
-    release:
-        types: [published]
 
 permissions:
-    contents: write
+    contents: read
 
 jobs:
     build:
@@ -113,33 +111,4 @@ jobs:
                   path: |
                       ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z
                       ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z.sha256
-            - name: Upload assets to the GitHub Release
-              if: github.event_name == 'release'
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: |
-                      ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z
-                      ./lib/_builds/multi-downloader-nx-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}.7z.sha256
-                  fail_on_unmatched_files: true
-    build-docker:
-        if: github.event_name == 'release'
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v6
-            - name: Set up Docker Buildx
-              id: buildx
-              uses: docker/setup-buildx-action@v4
-            - name: Login to DockerHub
-              uses: docker/login-action@v4
-              with:
-                  username: ${{ secrets.DOCKERHUB_USERNAME }}
-                  password: ${{ secrets.DOCKERHUB_TOKEN }}
-            - name: Build and push Docker images
-              uses: docker/build-push-action@v7
-              with:
-                  github-token: ${{ github.token }}
-                  push: true
-                  tags: |
-                      "multidl/multi-downloader-nx:${{ github.event.release.tag_name }}"
-            - name: Image digest
-              run: echo ${{ steps.docker_build.outputs.digest }}
+
