@@ -329,6 +329,18 @@ const args: TAppArg<boolean | number | string | unknown[]>[] = [
 		usage: '${device}'
 	},
 	{
+		name: 'majin',
+		group: 'dl',
+		describe: 'Enable Majin quality mode which transforms stream URLs for higher quality CENC DASH streams.',
+		docDescribe: true,
+		service: ['crunchy'],
+		type: 'boolean',
+		usage: '',
+		default: {
+			default: false
+		}
+	},
+	{
 		name: 'tsd',
 		group: 'dl',
 		describe: '(Total Session Death) Kills all active Crunchyroll Streaming Sessions to prevent getting the "TOO_MANY_ACTIVE_STREAMS" error.',

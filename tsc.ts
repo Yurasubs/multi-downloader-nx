@@ -57,7 +57,7 @@ export { ignore };
 	process.stdout.write('Removing lib dir... ');
 	fs.rmSync('lib', { recursive: true, force: true });
 	process.stdout.write('✓\nRunning tsc... ');
-	const tsc = exec('npx tsc');
+	const tsc = exec('bunx tsc');
 
 	await waitForProcess(tsc);
 
@@ -68,13 +68,13 @@ export { ignore };
 	if (!isTest && isGUI) {
 		process.stdout.write('✓\nBuilding react... ');
 
-		const installReactDependencies = exec('pnpm install', {
+		const installReactDependencies = exec('bun install', {
 			cwd: path.join(__dirname, 'gui', 'react')
 		});
 
 		await waitForProcess(installReactDependencies);
 
-		const react = exec('pnpm run build', {
+		const react = exec('bun run build', {
 			cwd: path.join(__dirname, 'gui', 'react'),
 			env: {
 				...process.env,
@@ -102,7 +102,7 @@ export { ignore };
 
 	process.stdout.write('✓\nInstalling dependencies... ');
 	if (!isTest) {
-		const dependencies = exec(`pnpm install ${isGUI ? '' : '-P'}`, {
+		const dependencies = exec(`bun install ${isGUI ? '' : '--production'}`, {
 			cwd: path.join(__dirname, 'lib')
 		});
 		await waitForProcess(dependencies);

@@ -1534,6 +1534,10 @@ export default class Crunchy implements ServiceClass {
 		}
 	}
 
+	private applyMajinTransform(url: string): string {
+		return url.replace('/static/', '/static/majin/').replace(/\/(?:\d+\/)?clean\/dash\//, '/clean/cenc/dash/');
+	}
+
 	public async downloadMediaList(
 		medias: CrunchyEpMeta,
 		options: CrunchyDownloadOptions
@@ -1823,6 +1827,12 @@ export default class Crunchy implements ServiceClass {
 					subtitles: videoStream.subtitles,
 					versions: videoStream.versions
 				};
+				if (options.majin) {
+					console.info('Majin quality mode enabled, transforming video stream URLs');
+					for (const key in derivedPlaystreams) {
+						derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+					}
+				}
 				pbData.vpb[`adaptive_${options.vstream}_${videoStream.url.includes('m3u8') ? 'hls' : 'dash'}_drm`] = {
 					...derivedPlaystreams
 				};

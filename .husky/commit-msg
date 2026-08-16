@@ -1,1 +1,1 @@
-npx commitlint --edit .git/COMMIT_EDITMSG
+bunx commitlint --edit .git/COMMIT_EDITMSG

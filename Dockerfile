@@ -13,9 +13,9 @@ RUN echo 'ffmpeg: "./bin/ffmpeg/ffmpeg"\nmkvmerge: "./bin/mkvtoolnix/mkvmerge"' 
 
 #Build AniDL
 
-RUN npm install -g pnpm
-RUN pnpm i
-RUN pnpm run build-linux-x64-gui
+RUN curl -fsSL https://bun.sh/install | bash && ln -s /root/.bun/bin/bun /usr/local/bin/bun
+RUN bun install
+RUN bun run build-linux-x64-gui
 
 # Move build to new Clean Image
 

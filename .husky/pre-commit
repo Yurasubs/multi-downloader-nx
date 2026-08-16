@@ -1,1 +1,1 @@
-npx tsc
+bun run tsc

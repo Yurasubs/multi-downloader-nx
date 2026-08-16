@@ -62,31 +62,31 @@ Dependencies that are only required for running from code. These are not require
 
 * NodeJS >= 18.0.0 (https://nodejs.org/)
 * NPM >= 6.9.0 (https://www.npmjs.org/)
-* PNPM >= 7.0.0 (https://pnpm.io/)
+* Bun >= 1.0.0 (https://bun.sh/)
 
 ### Build Setup
 
-Please note that NodeJS, NPM, and PNPM must be installed on your system. For instructions on how to install pnpm, check (https://pnpm.io/installation)
+Please note that NodeJS, NPM, and Bun must be installed on your system. For instructions on how to install bun, check (https://bun.sh/docs/installation)
 
 First clone this repo `git clone https://github.com/anidl/multi-downloader-nx.git`.
 
-`cd` into the cloned directory and run `pnpm i`. Next, decide if you want to package the application, build the code, or run from typescript.
+`cd` into the cloned directory and run `bun install`. Next, decide if you want to package the application, build the code, or run from typescript.
 
 ### Run from TypeScript
 
-You can run the code from native TypeScript, this requires tsx which you can install with pnpm with the following command: `pnpm -g i tsx`
+You can run the code from native TypeScript, this requires tsx which you can install with bun with the following command: `bun add -g tsx`
 
 Afterwords, you can run the application like this:
 
 * CLI: `tsx ./index.ts --help`
-* GUI: `pnpm gui` OR `tsx ./gui.ts` (If already compiled)
+* GUI: `bun gui` OR `tsx ./gui.ts` (If already compiled)
 
 ### Run as JavaScript
 
 If you want to build the application into JavaScript code to run, you can do that as well like this:
 
-* CLI: `pnpm run prebuild-cli`
-* GUI: `pnpm run prebuild-gui`
+* CLI: `bun run prebuild-cli`
+* GUI: `bun run prebuild-gui`
 
 Then you can cd into the `lib` folder and you will be able to run the CLI or GUI as follows:
 
@@ -94,7 +94,7 @@ Then you can cd into the `lib` folder and you will be able to run the CLI or GUI
 
 ### Build the application into an executable
 
-If you want to package the application, run pnpm run build-`{platform}`-`{type}` where `{platform}` is the operating system (currently the choices are windows, linux, macos, alpine, android, and arm) and `{type}` is cli or gui.
+If you want to package the application, run bun run build-`{platform}`-`{type}` where `{platform}` is the operating system (currently the choices are windows, linux, macos, alpine, android, and arm) and `{type}` is cli or gui.
 
 ## DRM Decryption
 

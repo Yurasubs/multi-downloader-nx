@@ -2,7 +2,7 @@ import { GithubTag, TagCompare } from '../@types/github';
 import path from 'path';
 import { UpdateFile } from '../@types/updateFile';
 import packageJson from '../package.json';
-import { CompilerOptions, transpileModule } from 'typescript';
+import ts from 'typescript';
 import tsConfig from '../tsconfig.json';
 import fs from 'fs';
 import { workingDir } from './module.cfg-loader';
@@ -120,8 +120,8 @@ export default async (force = false) => {
 						const isTSX = a.filename.endsWith('tsx');
 						const ret = {
 							path: a.filename.slice(0, isTSX ? -3 : -2) + `js${isTSX ? 'x' : ''}`,
-							content: transpileModule((await (await req.getData(a.raw_url)).res?.text()) ?? '', {
-								compilerOptions: tsConfig.compilerOptions as unknown as CompilerOptions
+							content: ts.transpileModule((await (await req.getData(a.raw_url)).res?.text()) ?? '', {
+								compilerOptions: tsConfig.compilerOptions as unknown as ts.CompilerOptions
 							}).outputText,
 							type: a.status === 'modified' ? ApplyType.UPDATE : a.status === 'added' ? ApplyType.ADD : ApplyType.DELETE
 						};

@@ -36,7 +36,7 @@
 	},
 	"scripts": {
 		"build": "npx tsc && npx webpack",
-		"start": "pnpm run build && pnpm run backend",
+		"start": "bun run build && bun run backend",
 		"backend": "npx tsx ../../gui.ts"
 	},
 	"browserslist": {

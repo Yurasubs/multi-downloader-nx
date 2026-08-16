@@ -84,9 +84,9 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v6
-            - uses: pnpm/action-setup@v5
+            - uses: oven-sh/setup-bun@v2
               with:
-                  version: latest
+                  bun-version: latest
             - name: Set up Node.js
               uses: actions/setup-node@v6
               with:
@@ -94,7 +94,7 @@ jobs:
                   check-latest: true
             - name: Install Node modules
               run: |
-                  pnpm install
+                  bun install
             - name: Get name and version from package.json
               run: |
                   test -n $(node -p -e "require('./package.json').name") &&
@@ -102,7 +102,7 @@ jobs:
                   echo PACKAGE_NAME=$(node -p -e "require('./package.json').name") >> $GITHUB_ENV &&
                   echo PACKAGE_VERSION=$(node -p -e "require('./package.json').version") >> $GITHUB_ENV || exit 1
             - name: Make build
-              run: pnpm run build-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}
+              run: bun run build-${{ matrix.build_type }}-${{ matrix.build_arch }}-${{ matrix.gui }}
             - name: Upload assets to the GitHub Release
               uses: softprops/action-gh-release@v2
               with:

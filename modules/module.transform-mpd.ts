@@ -75,7 +75,7 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 	const ret: MPDParsed = {};
 
 	// Audio Loop
-	for (const item of Object.values(parsed.mediaGroups.AUDIO.audio)) {
+	for (const item of Object.values(parsed.mediaGroups?.AUDIO?.audio ?? {})) {
 		for (const playlist of item.playlists) {
 			const host = new URL(playlist.resolvedUri).hostname;
 			if (!Object.prototype.hasOwnProperty.call(ret, host)) ret[host] = { audio: [], video: [] };
