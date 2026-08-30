@@ -56,7 +56,8 @@ export class Req {
 
 	async getData(durl: string, params: Partial<RequestInit & CustomParams> = {}): Promise<GetDataResponse> {
 		const options: RequestInit = {
-			method: params.method ? params.method : 'GET'
+			method: params.method ? params.method : 'GET',
+			signal: (params as any).signal ?? AbortSignal.timeout(this.argv.timeout ?? 15000)
 		};
 		if (params.headers) {
 			options.headers = params.headers;
@@ -66,6 +67,9 @@ export class Req {
 		}
 		if (typeof params.redirect == 'string') {
 			options.redirect = params.redirect;
+		}
+		if ((params as any).signal) {
+			options.signal = (params as any).signal;
 		}
 
 		// Proxy Handler
