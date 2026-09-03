@@ -1,3 +1,12 @@
+# Binary paths for external tools (FFmpeg, MKVToolNix, mp4decrypt, Shaka Packager).
+# You can specify:
+#   - A binary name available in system PATH (e.g., 'ffmpeg.exe' or 'ffmpeg')
+#   - An absolute or relative path (e.g., 'C:/tools/ffmpeg/bin/ffmpeg.exe')
+#   - Environment variables (e.g., '%FFMPEG_PATH%', '%LOCALAPPDATA%/ffmpeg/bin/ffmpeg.exe', '$HOME/bin/ffmpeg')
+#
+# You can also set system environment variables directly (e.g. in Windows System Properties):
+#   - FFMPEG_PATH, MKVMERGE_PATH, MP4DECRYPT_PATH, SHAKA_PATH
+#   - Or BIN_PATH / BIN_DIR to point to a folder containing the binaries
 ffmpeg: 'ffmpeg.exe'
 mkvmerge: 'mkvmerge.exe'
 mp4decrypt: 'mp4decrypt.exe'

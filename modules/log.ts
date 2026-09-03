@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { workingDir } from './module.cfg-loader';
 import log4js from 'log4js';
+import { workingDir } from './module.working-dir';
 
-const logFolder = path.join(workingDir, 'logs');
-const latest = path.join(logFolder, 'latest.log');
+const getLogFolder = () => path.join(workingDir, 'logs');
+const getLatestLog = () => path.join(getLogFolder(), 'latest.log');
 
 const makeLogFolder = () => {
+	const logFolder = getLogFolder();
+	const latest = getLatestLog();
 	if (!fs.existsSync(logFolder)) fs.mkdirSync(logFolder, { recursive: true });
 	if (fs.existsSync(latest)) {
 		const stats = fs.statSync(latest);
@@ -40,7 +42,7 @@ const makeLogger = () => {
 			},
 			file: {
 				type: 'file',
-				filename: latest,
+				filename: getLatestLog(),
 				layout: {
 					type: 'pattern',
 					pattern: '%x{info}%m',

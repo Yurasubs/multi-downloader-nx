@@ -22,7 +22,15 @@ By default this application uses the following paths to programs (main executabl
 * `mp4decrypt.exe` (Windows) or `mp4decrypt` (other) (From PATH) (or shaka-packager)
 * `shaka-packager.exe` (Windows) or `shaka-packager` (other) (From PATH) (or mp4decrypt)
 
-To change these paths you need to edit `bin-path.yml` in `./config/` directory.
+To change these paths you need to edit `bin-path.yml` in `./config/` directory, or set environment variables in your system:
+* `FFMPEG_PATH` for FFmpeg (executable or directory)
+* `MKVMERGE_PATH` for MKVToolNix / mkvmerge
+* `MP4DECRYPT_PATH` for mp4decrypt
+* `SHAKA_PATH` or `SHAKA_PACKAGER_PATH` for Shaka Packager
+* `BIN_PATH` or `BIN_DIR` to specify a directory containing the binaries
+
+You can also use Windows-style (`%VAR%`) or Unix-style (`${VAR}`) environment variables directly inside `bin-path.yml` (e.g. `%LOCALAPPDATA%/ffmpeg/bin/ffmpeg.exe` or `%FFMPEG_PATH%`).
+
 
 ## CLI Information
 
