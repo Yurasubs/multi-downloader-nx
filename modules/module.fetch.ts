@@ -4,15 +4,13 @@ import { console } from './log';
 import { argvC } from './module.app-args';
 import { Agent, ProxyAgent, fetch, RequestInit } from 'undici';
 
-if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined) {
-	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-}
+// TLS verification enabled by default (BUG-0001 remediated)
 
 const http1Agent = new Agent({
 	connections: 16,
 	connect: {
-		ALPNProtocols: ['http/1.1'],
-		rejectUnauthorized: false
+		ALPNProtocols: ['http/1.1']
+		// rejectUnauthorized default true
 	},
 	allowH2: false,
 	pipelining: 0
@@ -21,7 +19,7 @@ const http1Agent = new Agent({
 export type FetchParams = Partial<RequestInit & CustomParams>;
 
 export type Params = {
-	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 	headers?: Record<string, string>;
 	body?: BodyInit | undefined;
 	binary?: boolean;
@@ -42,14 +40,6 @@ type GetDataResponse = {
 			res?: Response;
 		};
 };
-
-// function hasDisplay(): boolean {
-// 	if (process.platform === 'linux') {
-// 		return !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
-// 	}
-// 	// Win and Mac true by default
-// 	return true;
-// }
 
 // req
 export class Req {
@@ -84,8 +74,8 @@ export class Req {
 				uri: this.argv.proxy,
 				connections: 16,
 				connect: {
-					ALPNProtocols: ['http/1.1'],
-					rejectUnauthorized: false
+					ALPNProtocols: ['http/1.1']
+					// rejectUnauthorized default true
 				},
 				allowH2: false,
 				pipelining: 0

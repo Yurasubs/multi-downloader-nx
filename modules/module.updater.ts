@@ -169,7 +169,7 @@ function done(newVersion?: string) {
 	);
 	if (newVersion) {
 		fs.writeFileSync(
-			'../package.json',
+			path.join(__dirname, '..', 'package.json'),
 			JSON.stringify(
 				{
 					...packageJson,

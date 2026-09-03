@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { IncomingMessage, Server } from 'http';
 import ws, { WebSocket } from 'ws';
 import { RandomEvent, RandomEvents } from '../../@types/randomEvents';

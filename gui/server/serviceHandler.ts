@@ -22,11 +22,21 @@ export default class ServiceHandler {
 
 	private handleMessages() {
 		this.ws.events.on('setupServer', ({ data }, respond) => {
-			writeYamlCfgFile('gui', data);
+			if (!data || typeof data !== 'object') {
+				respond(false);
+				return;
+			}
+			const safeData: Record<string, any> = {};
+			if (typeof data.port === 'number' && data.port > 0 && data.port <= 65535) {
+				safeData.port = data.port;
+			}
+			if (typeof data.password === 'string') {
+				safeData.password = data.password;
+			}
+			writeYamlCfgFile('gui', safeData as any);
 			this.state.setup = true;
 			setState(this.state);
 			respond(true);
-			process.exit(0);
 		});
 
 		this.ws.events.on('setup', ({ data }) => {

@@ -106,12 +106,8 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 	}
 
 	private generateRandomString(length: number) {
-		const characters = '0123456789abcdef';
-		let result = '';
-		for (let i = 0; i < length; i++) {
-			result += characters.charAt(Math.floor(Math.random() * characters.length));
-		}
-		return result;
+		const bytesNeeded = Math.ceil(length / 2);
+		return crypto.randomBytes(bytesNeeded).toString('hex').slice(0, length);
 	}
 
 	private parseCookies(cookiesString: string | null): Record<string, string> {
@@ -120,7 +116,12 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 			cookiesString.split(';').forEach((cookie) => {
 				const parts = cookie.split('=');
 				const name = parts.shift()?.trim();
-				const value = decodeURIComponent(parts.join('='));
+				let value = parts.join('=');
+				try {
+					value = decodeURIComponent(value);
+				} catch {
+					/* ignore malformed cookie */
+				}
 				if (name) {
 					cookies[name] = value;
 				}

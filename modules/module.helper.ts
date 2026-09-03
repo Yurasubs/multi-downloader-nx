@@ -12,10 +12,11 @@ export default class Helper {
 		return a;
 	}
 	static formatTime(t: number) {
-		const days = Math.floor(t / 86400);
-		const hours = Math.floor((t % 86400) / 3600);
-		const minutes = Math.floor(((t % 86400) % 3600) / 60);
-		const seconds = +(t % 60).toFixed(0);
+		const totalSeconds = Math.round(t);
+		const days = Math.floor(totalSeconds / 86400);
+		const hours = Math.floor((totalSeconds % 86400) / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
 		const daysS = days > 0 ? `${days}d` : '';
 		const hoursS = daysS || hours ? `${daysS}${daysS && hours < 10 ? '0' : ''}${hours}h` : '';
 		const minutesS = minutes || hoursS ? `${hoursS}${hoursS && minutes < 10 ? '0' : ''}${minutes}m` : '';
@@ -50,7 +51,7 @@ export default class Helper {
 	static exec(
 		pname: string,
 		fpath: string,
-		pargs: string,
+		pargs: string | string[],
 		spc = false
 	):
 		| {
@@ -60,24 +61,49 @@ export default class Helper {
 				isOk: false;
 				err: Error & { code: number };
 		  } {
-		pargs = pargs ? ' ' + pargs : '';
-		console.info(`\n> "${pname}"${pargs}${spc ? '\n' : ''}`);
-		try {
-			if (process.platform === 'win32') {
-				childProcess.execSync('& ' + fpath + pargs, { stdio: 'inherit', shell: 'powershell.exe', windowsHide: true });
-			} else {
-				childProcess.execSync(fpath + pargs, { stdio: 'inherit' });
+		const cleanFpath = fpath.trim().replace(/^["']|["']$/g, '');
+		let argsArray: string[];
+		if (Array.isArray(pargs)) {
+			argsArray = pargs;
+		} else {
+			// Safe shell argument tokenizer to prevent metacharacter injection
+			argsArray = [];
+			let current = '';
+			let inDoubleQuote = false;
+			let inSingleQuote = false;
+			for (let i = 0; i < pargs.length; i++) {
+				const char = pargs[i];
+				if (char === '"' && !inSingleQuote) {
+					inDoubleQuote = !inDoubleQuote;
+				} else if (char === "'" && !inDoubleQuote) {
+					inSingleQuote = !inSingleQuote;
+				} else if (/\s/.test(char) && !inDoubleQuote && !inSingleQuote) {
+					if (current.length > 0) {
+						argsArray.push(current);
+						current = '';
+					}
+				} else {
+					current += char;
+				}
 			}
+			if (current.length > 0) {
+				argsArray.push(current);
+			}
+		}
+		const logArgs = argsArray.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ');
+		console.info(`\n> "${pname}" ${logArgs}${spc ? '\n' : ''}`.trim());
+		try {
+			childProcess.execFileSync(cleanFpath, argsArray, { stdio: 'inherit', windowsHide: true });
 			return {
 				isOk: true
 			};
 		} catch (er) {
-			const err = er as Error & { status: number };
+			const err = er as Error & { status?: number };
 			return {
 				isOk: false,
 				err: {
 					...err,
-					code: err.status
+					code: err.status ?? 1
 				}
 			};
 		}

@@ -20,10 +20,8 @@ export default class Base {
 	private queue: QueueItem[] = [];
 	private workOnQueue = false;
 
-	version(): Promise<string> {
-		return new Promise(() => {
-			return packageJson.version;
-		});
+	async version(): Promise<string> {
+		return packageJson.version;
 	}
 
 	initState() {
@@ -82,16 +80,27 @@ export default class Base {
 
 	async openFile(data: [FolderTypes, string]) {
 		switch (data[0]) {
-			case 'config':
-				open(path.join(cfg.dir.config, data[1]));
+			case 'config': {
+				const resolvedConfigDir = path.resolve(cfg.dir.config);
+				const targetPath = path.resolve(resolvedConfigDir, data[1]);
+				if (!targetPath.startsWith(resolvedConfigDir)) {
+					console.warn(`[Security] Path traversal attempt in openFile: ${data[1]}`);
+					throw new Error('Access denied: path outside config directory');
+				}
+				open(targetPath);
 				break;
+			}
 			case 'content':
 				throw new Error('No subfolders');
 		}
 	}
 
 	async openURL(data: string) {
-		open(data);
+		if (typeof data !== 'string' || !/^https?:\/\//i.test(data.trim())) {
+			console.warn(`[Security] Refusing to open unsafe URL: ${data}`);
+			return;
+		}
+		open(data.trim());
 	}
 
 	public async getQueue(): Promise<QueueItem[]> {
@@ -122,14 +131,27 @@ export default class Base {
 		return this.workOnQueue;
 	}
 
+	private isProcessingQueue = false;
+
 	private async queueChange() {
 		this.sendMessage({ name: 'queueChange', data: this.queue });
-		if (this.workOnQueue && this.queue.length > 0 && !(await this.isDownloading())) {
+		if (this.workOnQueue && this.queue.length > 0 && !this.downloading && !this.isProcessingQueue) {
+			this.isProcessingQueue = true;
 			this.setDownloading(true);
-			this.sendMessage({ name: 'current', data: this.queue[0] });
-			this.downloadItem(this.queue[0]);
+			const item = this.queue[0];
 			this.queue = this.queue.slice(1);
-			this.queueChange();
+			this.sendMessage({ name: 'current', data: item });
+			(async () => {
+				try {
+					await this.downloadItem(item);
+				} catch (err) {
+					console.error(`[Queue] Failed to download item: ${err}`);
+				} finally {
+					this.setDownloading(false);
+					this.isProcessingQueue = false;
+					await this.onFinish();
+				}
+			})();
 		}
 		this.state.services[this.name].queue = this.queue;
 		setState(this.state);

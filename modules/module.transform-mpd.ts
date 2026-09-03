@@ -82,34 +82,40 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 
 			if (playlist.sidx && playlist.segments.length == 0) {
 				const options: FetchParams = {
-					method: 'head'
+					method: 'HEAD'
 				};
 				const itemReq = await req.getData(playlist.sidx.uri, options);
-				if (!itemReq.res || !itemReq.ok)
+				if (!itemReq.res || !itemReq.ok) {
 					console.warn(
 						`${itemReq.error?.res?.status}: ${itemReq.error?.res?.statusText}, Unable to fetch byteLength for audio stream ${Math.round(playlist.attributes.BANDWIDTH / 1024)}KiB/s`
 					);
-				const byteLength = parseInt(itemReq.res?.headers?.get('content-length') as string);
-				let currentByte = playlist.sidx.map.byterange.length;
-				while (currentByte <= byteLength) {
-					playlist.segments.push({
-						duration: 0,
-						map: {
+				}
+				const clHeader = itemReq.res?.headers?.get('content-length');
+				const byteLength = clHeader ? parseInt(clHeader, 10) : NaN;
+				if (!isNaN(byteLength) && byteLength > 0) {
+					let currentByte = playlist.sidx.map.byterange.length;
+					while (currentByte <= byteLength) {
+						playlist.segments.push({
+							duration: 0,
+							map: {
+								uri: playlist.resolvedUri,
+								resolvedUri: playlist.resolvedUri,
+								byterange: playlist.sidx.map.byterange
+							},
 							uri: playlist.resolvedUri,
 							resolvedUri: playlist.resolvedUri,
-							byterange: playlist.sidx.map.byterange
-						},
-						uri: playlist.resolvedUri,
-						resolvedUri: playlist.resolvedUri,
-						byterange: {
-							length: 500000,
-							offset: currentByte
-						},
-						timeline: 0,
-						number: 0,
-						presentationTime: 0
-					});
-					currentByte = currentByte + 500000;
+							byterange: {
+								length: 500000,
+								offset: currentByte
+							},
+							timeline: 0,
+							number: 0,
+							presentationTime: 0
+						});
+						currentByte = currentByte + 500000;
+					}
+				} else {
+					console.warn(`[MPD] Invalid or missing content-length for audio stream sidx: ${clHeader}`);
 				}
 			}
 
@@ -163,34 +169,40 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 
 		if (playlist.sidx && playlist.segments.length == 0) {
 			const options: FetchParams = {
-				method: 'head'
+				method: 'HEAD'
 			};
 			const itemReq = await req.getData(playlist.sidx.uri, options);
-			if (!itemReq.res || !itemReq.ok)
+			if (!itemReq.res || !itemReq.ok) {
 				console.warn(
 					`${itemReq.error?.res?.status}: ${itemReq.error?.res?.statusText}, Unable to fetch byteLength for video stream ${playlist.attributes.RESOLUTION?.height}x${playlist.attributes.RESOLUTION?.width}@${Math.round(playlist.attributes.BANDWIDTH / 1024)}KiB/s`
 				);
-			const byteLength = parseInt(itemReq.res?.headers?.get('content-length') as string);
-			let currentByte = playlist.sidx.map.byterange.length;
-			while (currentByte <= byteLength) {
-				playlist.segments.push({
-					duration: 0,
-					map: {
+			}
+			const clHeader = itemReq.res?.headers?.get('content-length');
+			const byteLength = clHeader ? parseInt(clHeader, 10) : NaN;
+			if (!isNaN(byteLength) && byteLength > 0) {
+				let currentByte = playlist.sidx.map.byterange.length;
+				while (currentByte <= byteLength) {
+					playlist.segments.push({
+						duration: 0,
+						map: {
+							uri: playlist.resolvedUri,
+							resolvedUri: playlist.resolvedUri,
+							byterange: playlist.sidx.map.byterange
+						},
 						uri: playlist.resolvedUri,
 						resolvedUri: playlist.resolvedUri,
-						byterange: playlist.sidx.map.byterange
-					},
-					uri: playlist.resolvedUri,
-					resolvedUri: playlist.resolvedUri,
-					byterange: {
-						length: 2000000,
-						offset: currentByte
-					},
-					timeline: 0,
-					number: 0,
-					presentationTime: 0
-				});
-				currentByte = currentByte + 2000000;
+						byterange: {
+							length: 2000000,
+							offset: currentByte
+						},
+						timeline: 0,
+						number: 0,
+						presentationTime: 0
+					});
+					currentByte = currentByte + 2000000;
+				}
+			} else {
+				console.warn(`[MPD] Invalid or missing content-length for video stream sidx: ${clHeader}`);
 			}
 		}
 

@@ -1,3 +1,4 @@
+import { console } from './log';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ArgvType } from './module.app-args';
@@ -158,7 +159,19 @@ const makeCommand = (service: 'crunchy' | 'hidive' | 'adn'): Partial<ArgvType>[]
 };
 
 const loadData = (): DataType => {
-	if (fs.existsSync(archiveFile)) return JSON.parse(fs.readFileSync(archiveFile).toString()) as DataType;
+	if (fs.existsSync(archiveFile)) {
+		try {
+			return JSON.parse(fs.readFileSync(archiveFile).toString()) as DataType;
+		} catch (e) {
+			console.warn(`[Archive] Corrupted archive.json detected. Backing up and starting fresh.`);
+			try {
+				fs.renameSync(archiveFile, `${archiveFile}.corrupt.${Date.now()}`);
+			} catch {
+				/* ignore backup failure */
+			}
+			return {} as DataType;
+		}
+	}
 	return {} as DataType;
 };
 

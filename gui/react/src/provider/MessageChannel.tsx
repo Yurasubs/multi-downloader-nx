@@ -44,10 +44,14 @@ async function messageAndResponse<T extends keyof MessageTypes>(socket: WebSocke
 	const id = v4();
 	const ret = new Promise<WSMessage<T, 1>>((resolve) => {
 		const handler = function ({ data }: MessageEvent) {
-			const parsed = JSON.parse(data.toString()) as WSMessageWithID<T, 1>;
-			if (parsed.id === id) {
-				socket.removeEventListener('message', handler);
-				resolve(parsed);
+			try {
+				const parsed = JSON.parse(data.toString()) as WSMessageWithID<T, 1>;
+				if (parsed && parsed.id === id) {
+					socket.removeEventListener('message', handler);
+					resolve(parsed);
+				}
+			} catch {
+				/* ignore malformed WS payload */
 			}
 		};
 		socket.addEventListener('message', handler);
@@ -151,8 +155,14 @@ const MessageChannelProvider: FCWithChildren = ({ children }) => {
 		if (!socket) return;
 		/* finish is a placeholder */
 		const listener = (initalData: MessageEvent<string>) => {
-			const data = JSON.parse(initalData.data) as RandomEvent<'finish'>;
-			randomEventHandler.emit(data.name, data);
+			try {
+				const data = JSON.parse(initalData.data) as RandomEvent<'finish'>;
+				if (data && data.name) {
+					randomEventHandler.emit(data.name, data);
+				}
+			} catch {
+				/* ignore malformed WS payload */
+			}
 		};
 		socket.addEventListener('message', listener);
 		return () => {
