@@ -23,7 +23,7 @@ jobs:
                   node-version: 24
                   check-latest: true
             - run: bun install
-            - run: npx tsc
+            - run: bunx tsc
     eslint:
         needs: tsc
         runs-on: ubuntu-latest

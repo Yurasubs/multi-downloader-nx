@@ -12,6 +12,7 @@ permissions:
 
 jobs:
     build-node:
+        if: ${{ github.repository == 'anidl/multi-downloader-nx' || secrets.DOCKERHUB_USERNAME != '' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v6
