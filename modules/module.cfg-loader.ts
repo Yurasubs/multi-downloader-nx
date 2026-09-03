@@ -278,6 +278,24 @@ const loadBinCfg = async () => {
 			resolved = binFile ? binFile : undefined;
 		}
 
+		// Fallback: search in bin/ subdirectories of system PATH
+		if (!resolved) {
+			const pathEnv = getEnv('PATH') || '';
+			const sep = process.platform === 'win32' ? ';' : ':';
+			const pathDirs = pathEnv.split(sep).filter(Boolean);
+			for (const p of pathDirs) {
+				const candWin = path.join(p, 'bin', `${defaultBin[dir]}.exe`);
+				const candUnix = path.join(p, 'bin', defaultBin[dir]);
+				if (process.platform === 'win32' && fs.existsSync(candWin)) {
+					resolved = candWin;
+					break;
+				} else if (fs.existsSync(candUnix)) {
+					resolved = candUnix;
+					break;
+				}
+			}
+		}
+
 		binCfg[dir] = resolved;
 	}
 	return binCfg;

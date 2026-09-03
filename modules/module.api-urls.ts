@@ -89,8 +89,7 @@ const api: APIType = {
 api.crunchyDefHeader = {
 	'User-Agent': api.crunchyDefUserAgent,
 	'Accept-Encoding': 'gzip',
-	Connection: 'Keep-Alive',
-	Host: 'www.crunchyroll.com'
+	Connection: 'Keep-Alive'
 };
 
 // set header

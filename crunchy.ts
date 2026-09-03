@@ -1101,12 +1101,10 @@ export default class Crunchy implements ServiceClass {
 			})
 		].join('');
 		const reqEpsCMSList = await this.req.getData(reqEpsCMSListOpts, AuthHeaders);
-		if (!reqEpsCMSList.ok || !reqEpsCMSList.res) {
-			console.error('Episode List Request FAILED!');
-			return { isOk: false, reason: new Error('Episode List request failed. No more information provided.') };
+		let episodeListAndroid: CrunchyAndroidEpisodes | undefined;
+		if (reqEpsCMSList.ok && reqEpsCMSList.res) {
+			episodeListAndroid = (await reqEpsCMSList.res.json()) as CrunchyAndroidEpisodes;
 		}
-		//CrunchyEpisodeList
-		const episodeListAndroid = (await reqEpsCMSList.res.json()) as CrunchyAndroidEpisodes;
 
 		//get episode info API
 		const reqEpsListOpts = [
@@ -1122,25 +1120,31 @@ export default class Crunchy implements ServiceClass {
 		].join('');
 		const reqEpsList = await this.req.getData(reqEpsListOpts, AuthHeaders);
 		if (!reqEpsList.ok || !reqEpsList.res) {
-			console.error('Episode List Request FAILED!');
-			return { isOk: false, reason: new Error('Episode List request failed. No more information provided.') };
-		}
-		//CrunchyEpisodeList
-		const episodeListAPI = (await reqEpsList.res.json()) as CrunchyEpisodeList;
-
-		// if API has more items than CMS use API episodes
-		if (episodeListAPI.total > episodeListAndroid.total) {
-			episodeList = {
-				total: episodeListAPI.total,
-				data: episodeListAPI.data,
-				meta: {}
-			};
+			if (episodeListAndroid) {
+				episodeList = {
+					total: episodeListAndroid.total,
+					data: episodeListAndroid.items,
+					meta: {}
+				};
+			} else {
+				console.error('Episode List Request FAILED!');
+				return { isOk: false, reason: new Error('Episode List request failed. No more information provided.') };
+			}
 		} else {
-			episodeList = {
-				total: episodeListAndroid.total,
-				data: episodeListAndroid.items,
-				meta: {}
-			};
+			const episodeListAPI = (await reqEpsList.res.json()) as CrunchyEpisodeList;
+			if (!episodeListAndroid || episodeListAPI.total >= episodeListAndroid.total) {
+				episodeList = {
+					total: episodeListAPI.total,
+					data: episodeListAPI.data,
+					meta: {}
+				};
+			} else {
+				episodeList = {
+					total: episodeListAndroid.total,
+					data: episodeListAndroid.items,
+					meta: {}
+				};
+			}
 		}
 
 		const epNumList: {
@@ -1389,7 +1393,11 @@ export default class Crunchy implements ServiceClass {
 					'Key-Pair-Id': this.cmsToken.cms.key_pair_id
 				})
 			].join('');
-			const objectReq = await this.req.getData(objectReqOpts, AuthHeaders);
+			let objectReq = await this.req.getData(objectReqOpts, AuthHeaders);
+			if (!objectReq.ok || !objectReq.res) {
+				const fallbackOpts = `${api.content_cms}/objects/${doEpsFilter.values.join(',')}?locale=${this.locale}`;
+				objectReq = await this.req.getData(fallbackOpts, AuthHeaders);
+			}
 			if (!objectReq.ok || !objectReq.res) {
 				console.error('Objects Request FAILED!');
 				if (objectReq.error && objectReq.error.res && objectReq.error.res.body) {
@@ -1400,11 +1408,13 @@ export default class Crunchy implements ServiceClass {
 				}
 				return [];
 			}
-			const objectInfoAndroid = (await objectReq.res.json()) as CrunchyAndroidObject;
+			const objectResData = (await objectReq.res.json()) as Record<string, any>;
+			const objectItems = (objectResData.items ?? objectResData.data ?? []) as AndroidObject[];
+			const objectTotal = (objectResData.total ?? objectItems.length) as number;
 
 			objectInfo = {
-				total: objectInfo.total + objectInfoAndroid.total,
-				data: [...objectInfo.data, ...objectInfoAndroid.items],
+				total: objectInfo.total + objectTotal,
+				data: [...objectInfo.data, ...objectItems],
 				meta: {}
 			};
 		}
@@ -3535,12 +3545,10 @@ export default class Crunchy implements ServiceClass {
 				})
 			].join('');
 			const reqEpsCMSList = await this.req.getData(reqEpsCMSListOpts, AuthHeaders);
-			if (!reqEpsCMSList.ok || !reqEpsCMSList.res) {
-				console.error('Episode List Request FAILED!');
-				return;
+			let episodeListAndroid: CrunchyAndroidEpisodes | undefined;
+			if (reqEpsCMSList.ok && reqEpsCMSList.res) {
+				episodeListAndroid = (await reqEpsCMSList.res.json()) as CrunchyAndroidEpisodes;
 			}
-			//CrunchyEpisodeList
-			const episodeListAndroid = (await reqEpsCMSList.res.json()) as CrunchyAndroidEpisodes;
 
 			//get episode info API
 			const reqEpsListOpts = [
@@ -3556,25 +3564,31 @@ export default class Crunchy implements ServiceClass {
 			].join('');
 			const reqEpsList = await this.req.getData(reqEpsListOpts, AuthHeaders);
 			if (!reqEpsList.ok || !reqEpsList.res) {
-				console.error('Episode List Request FAILED!');
-				return;
-			}
-			//CrunchyEpisodeList
-			const episodeListAPI = (await reqEpsList.res.json()) as CrunchyEpisodeList;
-
-			// if API has more items than CMS use API episodes
-			if (episodeListAPI.total > episodeListAndroid.total) {
-				episodeList = {
-					total: episodeList.total + episodeListAPI.total,
-					data: [...episodeList.data, ...episodeListAPI.data],
-					meta: {}
-				};
+				if (episodeListAndroid) {
+					episodeList = {
+						total: episodeList.total + episodeListAndroid.total,
+						data: [...episodeList.data, ...episodeListAndroid.items],
+						meta: {}
+					};
+				} else {
+					console.error('Episode List Request FAILED!');
+					return;
+				}
 			} else {
-				episodeList = {
-					total: episodeList.total + episodeListAndroid.total,
-					data: [...episodeList.data, ...episodeListAndroid.items],
-					meta: {}
-				};
+				const episodeListAPI = (await reqEpsList.res.json()) as CrunchyEpisodeList;
+				if (!episodeListAndroid || episodeListAPI.total >= episodeListAndroid.total) {
+					episodeList = {
+						total: episodeList.total + episodeListAPI.total,
+						data: [...episodeList.data, ...episodeListAPI.data],
+						meta: {}
+					};
+				} else {
+					episodeList = {
+						total: episodeList.total + episodeListAndroid.total,
+						data: [...episodeList.data, ...episodeListAndroid.items],
+						meta: {}
+					};
+				}
 			}
 		}
 

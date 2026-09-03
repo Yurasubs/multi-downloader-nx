@@ -4,10 +4,18 @@ import { console } from './log';
 import { argvC } from './module.app-args';
 import { Agent, ProxyAgent, fetch, RequestInit } from 'undici';
 
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined) {
+	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 const http1Agent = new Agent({
 	connections: 16,
-	connect: { ALPNProtocols: ['http/1.1'] },
-	allowH2: false
+	connect: {
+		ALPNProtocols: ['http/1.1'],
+		rejectUnauthorized: false
+	},
+	allowH2: false,
+	pipelining: 0
 });
 
 export type FetchParams = Partial<RequestInit & CustomParams>;
@@ -75,8 +83,12 @@ export class Req {
 			dispatcher = new ProxyAgent({
 				uri: this.argv.proxy,
 				connections: 16,
-				connect: { ALPNProtocols: ['http/1.1'] },
-				allowH2: false
+				connect: {
+					ALPNProtocols: ['http/1.1'],
+					rejectUnauthorized: false
+				},
+				allowH2: false,
+				pipelining: 0
 			});
 		} else if ((params.useProxy || this.argv.proxyAll) && this.argv.proxy && !validProxy) {
 			console.warn('[Fetch] Provided invalid Proxy URL, not proxying traffic.');
@@ -142,6 +154,9 @@ export class Req {
 			} & TypeError & {
 					res: Response;
 				};
+			if ((error?.message?.includes('socket connection was closed') || error?.message?.includes('ECONNRESET')) && !(params as any)._retried) {
+				return await this.getData(durl, { ...params, _retried: true } as any);
+			}
 			if (error.res && error.res.status && error.res.statusText) {
 				console.error(`${error.name} ${error.res.status}: ${error.res.statusText}`);
 			} else {
