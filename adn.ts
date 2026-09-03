@@ -513,6 +513,7 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 
 		const configReq = await this.req.getData(`https://gw.api.animationdigitalnetwork.com/player/video/${data.id}/configuration`, {
 			headers: {
+				'X-Profile-ID': '1',
 				Authorization: `Bearer ${this.token.accessToken}`,
 				'X-Target-Distribution': this.locale
 			}
@@ -565,6 +566,7 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 		//TODO: Add chapter support
 		const streamsRequest = await this.req.getData(linksUrl + '?freeWithAds=true&adaptive=true&withMetadata=true&source=Web', {
 			headers: {
+				'X-Profile-ID': '1',
 				'X-Player-Token': authorization,
 				'X-Target-Distribution': this.locale
 			}
