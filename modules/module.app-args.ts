@@ -7,6 +7,7 @@ import leven from 'leven';
 import { console } from './log';
 import { CrunchyVideoPlayStreams, CrunchyAudioPlayStreams } from '../@types/enums';
 import pj from '../package.json';
+import { parseUrl } from './module.url';
 
 export let argvC: {
 	[x: string]: unknown;
@@ -29,6 +30,8 @@ export let argvC: {
 	downloadArchive: boolean;
 	addArchive: boolean;
 	but: boolean;
+	url: string | undefined;
+	u: string | undefined;
 	auth: boolean | undefined;
 	dlFonts: boolean | undefined;
 	search: string | undefined;
@@ -103,13 +106,85 @@ export let argvC: {
 
 export type ArgvType = typeof argvC;
 
+// Resolves -u / --url arguments automatically into service and target options
+const resolveUrlArgs = (argv: string[]): string[] => {
+	let urlValue: string | undefined;
+	for (let i = 0; i < argv.length; i++) {
+		const a = argv[i];
+		if (a === '-u' || a === '--url') {
+			if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+				urlValue = argv[i + 1];
+			}
+		} else if (a.startsWith('--url=')) {
+			urlValue = a.slice('--url='.length);
+		} else if (a.startsWith('-u=')) {
+			urlValue = a.slice('-u='.length);
+		}
+	}
+
+	if (!urlValue) return argv;
+
+	const parsedUrl = parseUrl(urlValue);
+	if (!parsedUrl) {
+		console.error(`[URL] Unable to parse or unsupported URL: ${urlValue}`);
+		process.exit(1);
+	}
+
+	console.info(`[URL] Detected service '${parsedUrl.service}', ${parsedUrl.type} ID: '${parsedUrl.id}'`);
+
+	const hasService = argv.some((a) => a === '--service' || a.startsWith('--service='));
+	if (!hasService) {
+		argv.push('--service', parsedUrl.service);
+	}
+
+	switch (parsedUrl.type) {
+		case 'series': {
+			const hasSeries = argv.some((a) => a === '--series' || a === '--srz' || a.startsWith('--series=') || a.startsWith('--srz='));
+			if (!hasSeries) {
+				argv.push('--series', parsedUrl.id);
+			}
+			break;
+		}
+		case 'season': {
+			const hasSeason = argv.some((a) => a === '-s' || a === '--s' || a.startsWith('-s='));
+			if (!hasSeason) {
+				argv.push('-s', parsedUrl.id);
+			}
+			break;
+		}
+		case 'episode': {
+			const hasEpisode = argv.some((a) => a === '-e' || a === '--e' || a === '--episode' || a.startsWith('-e='));
+			if (!hasEpisode) {
+				argv.push('-e', parsedUrl.id);
+			}
+			break;
+		}
+		case 'movieListing': {
+			const hasMovie = argv.some((a) => a === '--movie-listing' || a === '--movieListing' || a.startsWith('--movie-listing='));
+			if (!hasMovie) {
+				argv.push('--movie-listing', parsedUrl.id);
+			}
+			break;
+		}
+		case 'extid': {
+			const hasExtid = argv.some((a) => a === '--extid' || a === '--externalid' || a.startsWith('--extid='));
+			if (!hasExtid) {
+				argv.push('--extid', parsedUrl.id);
+			}
+			break;
+		}
+	}
+
+	return argv;
+};
+
 // This functions manages slight mismatches like -srz and returns it as --srz
-const processArgv = () => {
+const processArgv = (inputArgv: string[] = process.argv) => {
 	const argv = [];
 	const arrayFlags = args.filter((a) => a.type === 'array').map((a) => `--${a.name}`);
 
-	for (let i = 0; i < process.argv.length; i++) {
-		const arg = process.argv[i];
+	for (let i = 0; i < inputArgv.length; i++) {
+		const arg = inputArgv[i];
 
 		if (/^-[a-zA-Z]{2,}$/.test(arg)) {
 			const found = args.find((a) => a.name === arg.substring(1) || a.alias === arg.substring(1));
@@ -123,8 +198,8 @@ const processArgv = () => {
 			const col = [];
 			let n = i + 1;
 
-			while (n < process.argv.length && !process.argv[n].startsWith('-')) {
-				col.push(process.argv[n]);
+			while (n < inputArgv.length && !inputArgv[n].startsWith('-')) {
+				col.push(inputArgv[n]);
 				n++;
 			}
 
@@ -137,7 +212,7 @@ const processArgv = () => {
 		argv.push(arg);
 	}
 
-	return argv;
+	return resolveUrlArgs(argv);
 };
 
 const appArgv = (
@@ -188,6 +263,8 @@ const overrideArguments = (cfg: { [key: string]: unknown }, override: Partial<ty
 		}
 	}
 
+	resolveUrlArgs(baseArgv);
+
 	const data = argv.parse(baseArgv);
 	const parsed = data.opts() as ArgvType;
 
@@ -232,10 +309,13 @@ const getCommander = (cfg: Record<string, unknown>, isGUI: boolean) => {
 		} else return _default;
 	};
 
+	const hasUrlArg = process.argv.some((a) => a === '-u' || a === '--url' || a.startsWith('--url=') || a.startsWith('-u='));
+
 	const data = args.map((a) => {
+		const isDemand = !isGUI && a.demandOption && !(hasUrlArg && a.name === 'service');
 		return {
 			...a,
-			demandOption: !isGUI && a.demandOption,
+			demandOption: isDemand,
 			group: groups[a.group],
 			default: typeof a.default === 'object' && !Array.isArray(a.default) ? parseDefault((a.default as any).name || a.name, (a.default as any).default) : a.default
 		};

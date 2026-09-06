@@ -5,6 +5,9 @@ import parseFileName from '../modules/module.filename';
 import { Variable } from '../modules/module.filename';
 import Merger from '../modules/module.merger';
 import packageJson from '../package.json';
+import { parseUrl } from '../modules/module.url';
+import * as yamlCfg from '../modules/module.cfg-loader';
+import { overrideArguments, argvC } from '../modules/module.app-args';
 
 describe('multi-downloader-nx Unit & Logic Tests', () => {
 	test('formatTime precision & overflow rounding', () => {
@@ -70,5 +73,119 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 	test('package version returns valid semantic version', () => {
 		expect(typeof packageJson.version).toBe('string');
 		expect(packageJson.version.split('.').length).toBeGreaterThanOrEqual(3);
+	});
+
+	test('parseUrl accurately extracts Crunchyroll series, episode, and movie URLs', () => {
+		// Series
+		const crSeries = parseUrl('https://www.crunchyroll.com/series/G4PH0WXVJ/spy-x-family');
+		expect(crSeries).toEqual({
+			service: 'crunchy',
+			type: 'series',
+			id: 'G4PH0WXVJ',
+			originalUrl: 'https://www.crunchyroll.com/series/G4PH0WXVJ/spy-x-family'
+		});
+
+		// Localized Series with trailing slash & query params
+		const crLocale = parseUrl('https://www.crunchyroll.com/de/series/G4PH0WXVJ/?season=1#main');
+		expect(crLocale?.service).toBe('crunchy');
+		expect(crLocale?.type).toBe('series');
+		expect(crLocale?.id).toBe('G4PH0WXVJ');
+
+		// Watch Episode
+		const crEp = parseUrl('https://www.crunchyroll.com/watch/GR19V7816/operation-strix');
+		expect(crEp).toEqual({
+			service: 'crunchy',
+			type: 'episode',
+			id: 'GR19V7816',
+			originalUrl: 'https://www.crunchyroll.com/watch/GR19V7816/operation-strix'
+		});
+
+		// Movie Listing
+		const crMovie = parseUrl('https://www.crunchyroll.com/movie_listing/G6497Z776/jujutsu-kaisen-0');
+		expect(crMovie).toEqual({
+			service: 'crunchy',
+			type: 'movieListing',
+			id: 'G6497Z776',
+			originalUrl: 'https://www.crunchyroll.com/movie_listing/G6497Z776/jujutsu-kaisen-0'
+		});
+
+		// Season
+		const crSeason = parseUrl('https://www.crunchyroll.com/season/GR19V7816');
+		expect(crSeason).toEqual({
+			service: 'crunchy',
+			type: 'season',
+			id: 'GR19V7816',
+			originalUrl: 'https://www.crunchyroll.com/season/GR19V7816'
+		});
+
+		// Legacy Episode Slug with ExtId
+		const crLegacy = parseUrl('https://www.crunchyroll.com/spy-x-family/episode-1-operation-strix-844551');
+		expect(crLegacy).toEqual({
+			service: 'crunchy',
+			type: 'extid',
+			id: '844551',
+			originalUrl: 'https://www.crunchyroll.com/spy-x-family/episode-1-operation-strix-844551'
+		});
+	});
+
+	test('parseUrl accurately extracts HiDive and ADN URLs', () => {
+		// HiDive Season
+		const hdSeason = parseUrl('https://www.hidive.com/season/24562');
+		expect(hdSeason).toEqual({
+			service: 'hidive',
+			type: 'season',
+			id: '24562',
+			originalUrl: 'https://www.hidive.com/season/24562'
+		});
+
+		// HiDive Series
+		const hdSeries = parseUrl('https://www.hidive.com/series/18871');
+		expect(hdSeries).toEqual({
+			service: 'hidive',
+			type: 'series',
+			id: '18871',
+			originalUrl: 'https://www.hidive.com/series/18871'
+		});
+
+		// HiDive Episode Stream
+		const hdStream = parseUrl('https://www.hidive.com/stream/oshi-no-ko/99881');
+		expect(hdStream).toEqual({
+			service: 'hidive',
+			type: 'episode',
+			id: '99881',
+			originalUrl: 'https://www.hidive.com/stream/oshi-no-ko/99881'
+		});
+
+		// ADN Show
+		const adnShow = parseUrl('https://animationdigitalnetwork.fr/video/show/123-title');
+		expect(adnShow).toEqual({
+			service: 'adn',
+			type: 'season',
+			id: '123',
+			originalUrl: 'https://animationdigitalnetwork.fr/video/show/123-title'
+		});
+
+		// ADN Video
+		const adnVideo = parseUrl('https://animationdigitalnetwork.com/video/456-episode-1');
+		expect(adnVideo).toEqual({
+			service: 'adn',
+			type: 'season',
+			id: '456',
+			originalUrl: 'https://animationdigitalnetwork.com/video/456-episode-1'
+		});
+
+		// Unsupported and invalid URLs
+		expect(parseUrl('')).toBeUndefined();
+		expect(parseUrl('https://example.com/video/123')).toBeUndefined();
+		expect(parseUrl('not a url')).toBeUndefined();
+	});
+
+	test('URL parameter automatically configures service and target ID in overrideArguments', () => {
+		const cfg = yamlCfg.loadCfg();
+		overrideArguments(cfg.cli, {
+			url: 'https://www.crunchyroll.com/series/G4PH0WXVJ/spy-x-family'
+		});
+		expect(argvC.service).toBe('crunchy');
+		expect(argvC.series).toBe('G4PH0WXVJ');
 	});
 });

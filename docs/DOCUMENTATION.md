@@ -99,6 +99,13 @@ Get last updated series list
 | Crunchyroll | `--absolute ` | `boolean` | `No`| `NaN` | `NaN` |
 
 Use absolute numbers for the episode. If not set, it will use the default index numbers
+#### `--url`
+| **Service** | **Usage** | **Type** | **Required** | **Alias** |  **cli-default Entry**
+| --- | --- | --- | --- | --- | ---| 
+| All | `--url ${url}` | `string` | `No`| `-u` | `NaN` |
+
+Provide a series, season, or episode URL from Crunchyroll, HiDive, or ADN.
+The service and target IDs are automatically resolved.
 #### `--movie-listing`
 | **Service** | **Usage** | **Type** | **Required** | **Alias** |  **cli-default Entry**
 | --- | --- | --- | --- | --- | ---| 

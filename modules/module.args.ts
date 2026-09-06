@@ -52,6 +52,16 @@ const args: TAppArg<boolean | number | string | unknown[]>[] = [
 		usage: ''
 	},
 	{
+		name: 'url',
+		alias: 'u',
+		describe: 'Set the URL to download from (automatically selects service and target ID)',
+		docDescribe: 'Provide a series, season, or episode URL from Crunchyroll, HiDive, or ADN.' + '\nThe service and target IDs are automatically resolved.',
+		group: 'dl',
+		service: ['all'],
+		type: 'string',
+		usage: '${url}'
+	},
+	{
 		name: 'auth',
 		describe: 'Enter authentication mode',
 		type: 'boolean',
