@@ -1860,10 +1860,10 @@ export default class Crunchy implements ServiceClass {
 									const hasHighQualityMajin = parsedMajin[firstServer].video.some((v) => {
 										const kbps = Math.round(v.bandwidth / 1024);
 										const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
-										return is1080pPlus && kbps > 7100;
+										return is1080pPlus && kbps >= 7500;
 									});
 									if (hasHighQualityMajin) {
-										console.info('Majin stream available with bitrate > 7100 kbps (1080p+), automatically enabling Majin quality mode');
+										console.info('Majin stream available with bitrate >= 7500 kbps (1080p+), automatically enabling Majin quality mode');
 										options.majin = true;
 										for (const key in derivedPlaystreams) {
 											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);

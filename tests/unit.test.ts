@@ -188,4 +188,24 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		expect(argvC.service).toBe('crunchy');
 		expect(argvC.series).toBe('G4PH0WXVJ');
 	});
+
+	test('Majin candidate stream evaluation requires 1080p+ and min 7.5MB/s (7500 kbps)', () => {
+		const checkMajinCandidate = (v: { quality: { width: number; height: number }; bandwidth: number }) => {
+			const kbps = Math.round(v.bandwidth / 1024);
+			const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
+			return is1080pPlus && kbps >= 7500;
+		};
+
+		// 1080p with 8000 kbps (> 7500 kbps / 7.5 MB/s) -> PASS
+		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 8000 * 1024 })).toBe(true);
+
+		// 1080p with exactly 7500 kbps (7.5 MB/s) -> PASS
+		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 7500 * 1024 })).toBe(true);
+
+		// 1080p with 7200 kbps (< 7500 kbps / 7.5 MB/s) -> FAIL
+		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 7200 * 1024 })).toBe(false);
+
+		// 720p (1280x720) even with high bitrate -> FAIL
+		expect(checkMajinCandidate({ quality: { width: 1280, height: 720 }, bandwidth: 8000 * 1024 })).toBe(false);
+	});
 });
