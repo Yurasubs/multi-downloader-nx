@@ -1249,6 +1249,9 @@ export default class Crunchy implements ServiceClass {
 		if (res === undefined || res.error) {
 			return false;
 		} else {
+			if (options.listFormats || options.F) {
+				return true;
+			}
 			if (!options.skipmux) {
 				await this.muxStreams(res.data, { ...options, output: res.fileName });
 			} else {
@@ -1734,6 +1737,7 @@ export default class Crunchy implements ServiceClass {
 			let isDLVideoBypass: boolean = options.vstream === 'android' || options.vstream === 'androidtab' ? true : false;
 			let isDLAudioBypass: boolean = options.astream === 'android' || options.astream === 'androidtab' ? true : false;
 			let isDLBypassCapable: boolean = true;
+			let majinStatus = options.majin ? 'ENABLED (manual flag)' : 'DISABLED (standard stream)';
 
 			if (isDLVideoBypass || isDLAudioBypass) {
 				const me = await this.req.getData(api.me, AuthHeaders);
@@ -1838,7 +1842,8 @@ export default class Crunchy implements ServiceClass {
 					versions: videoStream.versions
 				};
 				if (options.majin) {
-					console.info('Majin quality mode enabled, transforming video stream URLs');
+					majinStatus = 'ENABLED (manual flag)';
+					console.info('[Majin] Majin quality mode enabled (manual flag), transforming video stream URLs');
 					for (const key in derivedPlaystreams) {
 						derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 					}
@@ -1857,20 +1862,34 @@ export default class Crunchy implements ServiceClass {
 								);
 								const firstServer = Object.keys(parsedMajin)[0];
 								if (firstServer && parsedMajin[firstServer]?.video) {
+									const maxKbps = Math.max(...parsedMajin[firstServer].video.map((v) => Math.round(v.bandwidth / 1024)));
 									const hasHighQualityMajin = parsedMajin[firstServer].video.some((v) => {
 										const kbps = Math.round(v.bandwidth / 1024);
 										const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
 										return is1080pPlus && kbps >= 7500;
 									});
 									if (hasHighQualityMajin) {
-										console.info('Majin stream available with bitrate >= 7500 kbps (1080p+), automatically enabling Majin quality mode');
+										console.info(`[Majin] Candidate stream found with bitrate >= 7500 kbps (${maxKbps} kbps, 1080p+). Automatically enabling Majin mode.`);
 										options.majin = true;
+										majinStatus = `ENABLED (auto: ${maxKbps} kbps)`;
 										for (const key in derivedPlaystreams) {
 											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 										}
+									} else {
+										console.info(`[Majin] Stream checked: max 1080p bitrate is ${maxKbps} kbps (< 7500 kbps threshold). Keeping standard stream.`);
+										majinStatus = `DISABLED (< 7500 kbps, max: ${maxKbps} kbps)`;
 									}
+								} else {
+									console.info('[Majin] Stream manifest has no video tracks, keeping standard stream.');
+									majinStatus = 'DISABLED (no video in MPD)';
 								}
+							} else {
+								console.info('[Majin] Stream manifest is not valid MPD, keeping standard stream.');
+								majinStatus = 'DISABLED (invalid MPD)';
 							}
+						} else {
+							console.info(`[Majin] Stream not available (${majinReq.res ? `HTTP ${majinReq.res.status}` : 'request failed'}). Keeping standard stream.`);
+							majinStatus = `DISABLED (HTTP ${majinReq.res?.status ?? 'error'})`;
 						}
 					}
 				}
@@ -2202,8 +2221,30 @@ export default class Crunchy implements ServiceClass {
 						const chosenVideoSegments = videos[chosenVideoQuality];
 						const chosenAudioSegments = audios[chosenAudioQuality];
 
-						console.info(`Available Video Qualities:\n\t${videos.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
-						console.info(`Available Audio Qualities:\n\t${audios.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
+						console.info(`\nStream Configuration:\n\tVideo Stream (vstream): ${options.vstream}\n\tAudio Stream (astream): ${options.astream}\n\tMajin Mode:             ${majinStatus}`);
+						console.info(`Servers available:\n\t${vstreamServers.join('\n\t')}`);
+						console.info(`Available Video Qualities [vstream: ${options.vstream} | majin: ${options.majin ? 'ON' : 'OFF'}]:\n\t${videos.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
+						console.info(`Available Audio Qualities [astream: ${options.astream}]:\n\t${audios.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
+
+						if (options.listFormats || options.F) {
+							if (pbData.meta?.subtitles && Object.values(pbData.meta.subtitles).length > 0) {
+								console.info(`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles).map((s) => s.language).join(', ')}`);
+							}
+							if (videoStream) {
+								await this.refreshToken(true, true);
+								await this.req.getData(
+									`https://cr-play-service.prd.crunchyrollsvc.com/v1/token/${currentVersion ? currentVersion.guid : currentMediaId}/${videoStream.token}`,
+									{ ...{ method: 'DELETE' }, ...AuthHeaders }
+								);
+							}
+							if (audioStream && videoStream?.token !== audioStream.token) {
+								await this.req.getData(
+									`https://cr-play-service.prd.crunchyrollsvc.com/v1/token/${currentVersion ? currentVersion.guid : currentMediaId}/${audioStream.token}`,
+									{ ...{ method: 'DELETE' }, ...AuthHeaders }
+								);
+							}
+							return { data: [], fileName: '', error: false };
+						}
 
 						variables.push(
 							{
@@ -2224,7 +2265,7 @@ export default class Crunchy implements ServiceClass {
 							return;
 						}
 						console.info(
-							`Selected quality: \n\tVideo: ${chosenVideoSegments.resolutionText}\n\tAudio: ${chosenAudioSegments.resolutionText}\n\tVideo Server: ${vselectedServer}\n\tAudio Server: ${aselectedServer}`
+							`Selected quality: \n\tVideo: ${chosenVideoSegments.resolutionText} [vstream: ${options.vstream}, majin: ${options.majin ? 'ON' : 'OFF'}]\n\tAudio: ${chosenAudioSegments.resolutionText} [astream: ${options.astream}]\n\tVideo Server: ${vselectedServer}\n\tAudio Server: ${aselectedServer}`
 						);
 						console.info('Stream URL:', chosenVideoSegments.segments[0].uri.split(',.urlset')[0]);
 						// TODO check filename
@@ -2626,8 +2667,29 @@ export default class Crunchy implements ServiceClass {
 							}
 						}
 						const selPlUrl = plSelectedList[plQuality.map((a) => a.dim)[quality - 1]] ? plSelectedList[plQuality.map((a) => a.dim)[quality - 1]] : '';
+						console.info(`\nStream Configuration:\n\tVideo Stream (vstream): ${options.vstream}\n\tAudio Stream (astream): ${options.astream}`);
 						console.info(`Servers available:\n\t${plServerList.join('\n\t')}`);
-						console.info(`Available qualities:\n\t${plQuality.map((a, ind) => `[${ind + 1}] ${a.str}`).join('\n\t')}`);
+						console.info(`Available qualities [vstream: ${options.vstream}]:\n\t${plQuality.map((a, ind) => `[${ind + 1}] ${a.str}`).join('\n\t')}`);
+
+						if (options.listFormats || options.F) {
+							if (pbData.meta?.subtitles && Object.values(pbData.meta.subtitles).length > 0) {
+								console.info(`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles).map((s) => s.language).join(', ')}`);
+							}
+							if (videoStream) {
+								await this.refreshToken(true, true);
+								await this.req.getData(
+									`https://cr-play-service.prd.crunchyrollsvc.com/v1/token/${currentVersion ? currentVersion.guid : currentMediaId}/${videoStream.token}`,
+									{ ...{ method: 'DELETE' }, ...AuthHeaders }
+								);
+							}
+							if (audioStream && videoStream?.token !== audioStream.token) {
+								await this.req.getData(
+									`https://cr-play-service.prd.crunchyrollsvc.com/v1/token/${currentVersion ? currentVersion.guid : currentMediaId}/${audioStream.token}`,
+									{ ...{ method: 'DELETE' }, ...AuthHeaders }
+								);
+							}
+							return { data: [], fileName: '', error: false };
+						}
 
 						if (selPlUrl != '') {
 							variables.push(
@@ -2649,7 +2711,7 @@ export default class Crunchy implements ServiceClass {
 								console.error(`Unable to find language for code ${vcurStream.audio_lang}`);
 								return;
 							}
-							console.info(`Selected quality: ${Object.keys(plSelectedList).find((a) => plSelectedList[a] === selPlUrl)} @ ${plSelectedServer}`);
+							console.info(`Selected quality: ${Object.keys(plSelectedList).find((a) => plSelectedList[a] === selPlUrl)} [vstream: ${options.vstream}] @ ${plSelectedServer}`);
 							console.info('Stream URL:', selPlUrl);
 							// TODO check filename
 							fileName = parseFileName(options.fileName, variables, options.numbers, options.override).join(path.sep);

@@ -163,6 +163,12 @@ Allows you to download or view legacy Crunchyroll Ids
 | All | `-q ${qualityLevel}` | `number` | `No`| `NaN` | `0`| `q: ` |
 
 Set the quality level. Use 0 to use the maximum quality.
+#### `--list-formats`
+| **Service** | **Usage** | **Type** | **Required** | **Alias** |  **Default** |**cli-default Entry**
+| --- | --- | --- | --- | --- | --- | ---| 
+| All | `--list-formats ` | `boolean` | `No`| `-F` | `false`| `list-formats: ` |
+
+List all available video and audio formats/qualities with their resolution, bitrate, and codec, then exit without downloading.
 #### `--dlVideoOnce`
 | **Service** | **Usage** | **Type** | **Required** | **Alias** |  **Default** |**cli-default Entry**
 | --- | --- | --- | --- | --- | --- | ---| 

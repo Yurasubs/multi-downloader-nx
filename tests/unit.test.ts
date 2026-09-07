@@ -208,4 +208,20 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		// 720p (1280x720) even with high bitrate -> FAIL
 		expect(checkMajinCandidate({ quality: { width: 1280, height: 720 }, bandwidth: 8000 * 1024 })).toBe(false);
 	});
+
+	test('list-formats and -F parameter parsing and synchronization', () => {
+		const cfg = yamlCfg.loadCfg();
+
+		overrideArguments(cfg.cli, {
+			listFormats: true
+		}, true);
+		expect(argvC.listFormats).toBe(true);
+		expect(argvC.F).toBe(true);
+
+		overrideArguments(cfg.cli, {
+			F: true
+		}, true);
+		expect(argvC.listFormats).toBe(true);
+		expect(argvC.F).toBe(true);
+	});
 });

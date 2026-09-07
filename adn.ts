@@ -469,6 +469,9 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 			console.error('Failed to download media list');
 			return { isOk: false, reason: new Error('Failed to download media list') };
 		} else {
+			if (options.listFormats || options.F) {
+				return { isOk: true, value: undefined };
+			}
 			if (!options.skipmux) {
 				await this.muxStreams(res.data, { ...options, output: res.fileName });
 			} else {
@@ -733,6 +736,10 @@ export default class AnimationDigitalNetwork implements ServiceClass {
 					const selPlUrl = plSelectedList[plQuality.map((a) => a.dim)[quality - 1]] ? plSelectedList[plQuality.map((a) => a.dim)[quality - 1]] : '';
 					console.info(`Servers available:\n\t${plServerList.join('\n\t')}`);
 					console.info(`Available qualities:\n\t${plQuality.map((a, ind) => `[${ind + 1}] ${a.str}`).join('\n\t')}`);
+
+					if (options.listFormats || options.F) {
+						return { data: [], fileName: '', error: false };
+					}
 
 					if (selPlUrl != '') {
 						variables.push(

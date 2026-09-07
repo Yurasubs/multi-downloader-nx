@@ -232,6 +232,19 @@ const args: TAppArg<boolean | number | string | unknown[]>[] = [
 		usage: '${qualityLevel}'
 	},
 	{
+		name: 'list-formats',
+		alias: 'F',
+		describe: 'List all available video and audio formats/qualities and exit without downloading',
+		docDescribe: 'List all available video and audio formats/qualities with their resolution, bitrate, and codec, then exit without downloading.',
+		group: 'dl',
+		service: ['all'],
+		type: 'boolean',
+		usage: '',
+		default: {
+			default: false
+		}
+	},
+	{
 		name: 'dlVideoOnce',
 		describe: 'Download only once the video with the best selected quality',
 		type: 'boolean',

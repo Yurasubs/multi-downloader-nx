@@ -761,6 +761,9 @@ export default class Hidive implements ServiceClass {
 			console.error('Failed to download media list');
 			return { isOk: false, reason: new Error('Failed to download media list') };
 		} else {
+			if (options.listFormats || options.F) {
+				return { isOk: true, value: undefined };
+			}
 			if (!options.skipmux) {
 				await this.muxStreams(res.data, { ...options, output: res.fileName }, false);
 			} else {
@@ -786,14 +789,14 @@ export default class Hidive implements ServiceClass {
 		const subsMargin = 0;
 		const chosenFontSize = options.originalFontSize ? undefined : options.fontSize;
 		let encryptionKeys: KeyContainer[] = [];
-		if (!canDecrypt && (!options.novids || !options.noaudio)) {
+		if (!options.listFormats && !options.F && !canDecrypt && (!options.novids || !options.noaudio)) {
 			console.error('No valid Widevine or PlayReady CDM detected. Please ensure a supported and functional CDM is installed.');
 			return undefined;
 		}
 
 		if (!this.cfg.bin.ffmpeg) this.cfg.bin = await yamlCfg.loadBinCfg();
 
-		if (!this.cfg.bin.mp4decrypt && !this.cfg.bin.shaka && (!options.novids || !options.noaudio)) {
+		if (!options.listFormats && !options.F && !this.cfg.bin.mp4decrypt && !this.cfg.bin.shaka && (!options.novids || !options.noaudio)) {
 			console.error('Neither Shaka nor MP4Decrypt found. Please ensure at least one of them is installed.');
 			return undefined;
 		}
@@ -865,6 +868,10 @@ export default class Hidive implements ServiceClass {
 		console.info(`Servers available:\n\t${streamServers.join('\n\t')}`);
 		console.info(`Available Video Qualities:\n\t${videos.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
 		console.info(`Available Audio Qualities:\n\t${audios.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
+
+		if (options.listFormats || options.F) {
+			return { data: [], fileName: '', error: false };
+		}
 
 		variables.push(
 			{

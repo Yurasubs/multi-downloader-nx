@@ -48,6 +48,8 @@ export let argvC: {
 	e: string | undefined;
 	extid: string | undefined;
 	q: number;
+	listFormats: boolean;
+	F: boolean;
 	x: number;
 	cstream: keyof typeof CrunchyVideoPlayStreams;
 	vstream: keyof typeof CrunchyVideoPlayStreams;
@@ -228,16 +230,26 @@ const appArgv = (
 	// Be sure that both vars (name and alias) are defined
 	for (const item of args) {
 		const name = item.name;
+		const camelName = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 		const alias = item.alias;
+
+		if (parsed[camelName] !== undefined && parsed[name] === undefined) {
+			parsed[name] = parsed[camelName];
+		}
+		if (parsed[name] !== undefined && parsed[camelName] === undefined) {
+			parsed[camelName] = parsed[name];
+		}
 
 		if (!alias) continue;
 
-		if (parsed[name] !== undefined) {
-			parsed[alias] = parsed[name];
+		const val = parsed[camelName] !== undefined ? parsed[camelName] : parsed[name];
+		if (val !== undefined && parsed[alias] === undefined) {
+			parsed[alias] = val;
 		}
 
 		if (parsed[alias] !== undefined) {
-			parsed[name] = parsed[alias];
+			if (parsed[name] === undefined) parsed[name] = parsed[alias];
+			if (parsed[camelName] === undefined) parsed[camelName] = parsed[alias];
 		}
 	}
 
@@ -256,10 +268,19 @@ const overrideArguments = (cfg: { [key: string]: unknown }, override: Partial<ty
 
 	for (const [key, val] of Object.entries(override)) {
 		if (val === undefined) continue;
+		const matchedArg = args.find((a) => {
+			const aCamel = a.name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+			const aliasCamel = a.alias?.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+			return a.name === key || a.alias === key || aCamel === key || aliasCamel === key;
+		});
+
+		const cliFlag = matchedArg ? (matchedArg.alias === key ? matchedArg.alias : matchedArg.name) : key;
+		const flagStr = cliFlag.length > 1 ? `--${cliFlag}` : `-${cliFlag}`;
+
 		if (typeof val === 'boolean') {
-			if (val) baseArgv.push(key.length > 1 ? `--${key}` : `-${key}`);
+			if (val) baseArgv.push(flagStr);
 		} else {
-			baseArgv.push(key.length > 1 ? `--${key}` : `-${key}`, String(val));
+			baseArgv.push(flagStr, String(val));
 		}
 	}
 
@@ -271,16 +292,26 @@ const overrideArguments = (cfg: { [key: string]: unknown }, override: Partial<ty
 	// Be sure that both vars (name and alias) are defined
 	for (const item of args) {
 		const name = item.name;
+		const camelName = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 		const alias = item.alias;
+
+		if (parsed[camelName] !== undefined && parsed[name] === undefined) {
+			parsed[name] = parsed[camelName];
+		}
+		if (parsed[name] !== undefined && parsed[camelName] === undefined) {
+			parsed[camelName] = parsed[name];
+		}
 
 		if (!alias) continue;
 
-		if (parsed[name] !== undefined) {
-			parsed[alias] = parsed[name];
+		const val = parsed[camelName] !== undefined ? parsed[camelName] : parsed[name];
+		if (val !== undefined && parsed[alias] === undefined) {
+			parsed[alias] = val;
 		}
 
 		if (parsed[alias] !== undefined) {
-			parsed[name] = parsed[alias];
+			if (parsed[name] === undefined) parsed[name] = parsed[alias];
+			if (parsed[camelName] === undefined) parsed[camelName] = parsed[alias];
 		}
 	}
 
