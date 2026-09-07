@@ -2221,14 +2221,22 @@ export default class Crunchy implements ServiceClass {
 						const chosenVideoSegments = videos[chosenVideoQuality];
 						const chosenAudioSegments = audios[chosenAudioQuality];
 
-						console.info(`\nStream Configuration:\n\tVideo Stream (vstream): ${options.vstream}\n\tAudio Stream (astream): ${options.astream}\n\tMajin Mode:             ${majinStatus}`);
+						console.info(
+							`\nStream Configuration:\n\tVideo Stream (vstream): ${options.vstream}\n\tAudio Stream (astream): ${options.astream}\n\tMajin Mode:             ${majinStatus}`
+						);
 						console.info(`Servers available:\n\t${vstreamServers.join('\n\t')}`);
-						console.info(`Available Video Qualities [vstream: ${options.vstream} | majin: ${options.majin ? 'ON' : 'OFF'}]:\n\t${videos.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
+						console.info(
+							`Available Video Qualities [vstream: ${options.vstream} | majin: ${options.majin ? 'ON' : 'OFF'}]:\n\t${videos.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`
+						);
 						console.info(`Available Audio Qualities [astream: ${options.astream}]:\n\t${audios.map((a, ind) => `[${ind + 1}] ${a.resolutionText}`).join('\n\t')}`);
 
 						if (options.listFormats || options.F) {
 							if (pbData.meta?.subtitles && Object.values(pbData.meta.subtitles).length > 0) {
-								console.info(`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles).map((s) => s.language).join(', ')}`);
+								console.info(
+									`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles)
+										.map((s) => s.language)
+										.join(', ')}`
+								);
 							}
 							if (videoStream) {
 								await this.refreshToken(true, true);
@@ -2673,7 +2681,11 @@ export default class Crunchy implements ServiceClass {
 
 						if (options.listFormats || options.F) {
 							if (pbData.meta?.subtitles && Object.values(pbData.meta.subtitles).length > 0) {
-								console.info(`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles).map((s) => s.language).join(', ')}`);
+								console.info(
+									`Available Subtitles:\n\t${Object.values(pbData.meta.subtitles)
+										.map((s) => s.language)
+										.join(', ')}`
+								);
 							}
 							if (videoStream) {
 								await this.refreshToken(true, true);
@@ -2711,7 +2723,9 @@ export default class Crunchy implements ServiceClass {
 								console.error(`Unable to find language for code ${vcurStream.audio_lang}`);
 								return;
 							}
-							console.info(`Selected quality: ${Object.keys(plSelectedList).find((a) => plSelectedList[a] === selPlUrl)} [vstream: ${options.vstream}] @ ${plSelectedServer}`);
+							console.info(
+								`Selected quality: ${Object.keys(plSelectedList).find((a) => plSelectedList[a] === selPlUrl)} [vstream: ${options.vstream}] @ ${plSelectedServer}`
+							);
 							console.info('Stream URL:', selPlUrl);
 							// TODO check filename
 							fileName = parseFileName(options.fileName, variables, options.numbers, options.override).join(path.sep);

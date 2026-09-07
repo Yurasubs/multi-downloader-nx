@@ -212,15 +212,23 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 	test('list-formats and -F parameter parsing and synchronization', () => {
 		const cfg = yamlCfg.loadCfg();
 
-		overrideArguments(cfg.cli, {
-			listFormats: true
-		}, true);
+		overrideArguments(
+			cfg.cli,
+			{
+				listFormats: true
+			},
+			true
+		);
 		expect(argvC.listFormats).toBe(true);
 		expect(argvC.F).toBe(true);
 
-		overrideArguments(cfg.cli, {
-			F: true
-		}, true);
+		overrideArguments(
+			cfg.cli,
+			{
+				F: true
+			},
+			true
+		);
 		expect(argvC.listFormats).toBe(true);
 		expect(argvC.F).toBe(true);
 	});
