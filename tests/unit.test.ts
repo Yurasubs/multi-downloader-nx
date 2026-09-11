@@ -1,4 +1,4 @@
-process.argv = ['node', 'unit.test.ts', '--skipUpdate'];
+import './setup';
 import { describe, expect, test } from 'bun:test';
 import Helper from '../modules/module.helper';
 import parseFileName from '../modules/module.filename';
@@ -8,6 +8,7 @@ import packageJson from '../package.json';
 import { parseUrl } from '../modules/module.url';
 import * as yamlCfg from '../modules/module.cfg-loader';
 import { overrideArguments, argvC } from '../modules/module.app-args';
+import { parseISODuration } from '../modules/module.transform-mpd';
 
 describe('multi-downloader-nx Unit & Logic Tests', () => {
 	test('formatTime precision & overflow rounding', () => {
@@ -189,65 +190,139 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		expect(argvC.series).toBe('G4PH0WXVJ');
 	});
 
-	test('Majin candidate stream evaluation with head-to-head CBR comparison and resolution checks', () => {
-		interface VideoTrack {
+	test('parseISODuration accurately parses ISO 8601 duration formats', () => {
+		expect(parseISODuration('PT23M40.044S')).toBeCloseTo(1420.044, 3);
+		expect(parseISODuration('PT1H02M15S')).toBe(3735);
+		expect(parseISODuration('PT45S')).toBe(45);
+		expect(parseISODuration('PT10M')).toBe(600);
+		expect(parseISODuration(undefined)).toBe(0);
+		expect(parseISODuration('')).toBe(0);
+	});
+
+	test('Majin candidate stream evaluation using actual probed bitrate from filesize and duration', () => {
+		interface ProbedTrack {
+			quality: { width: number; height: number };
+			manifestBandwidth: number;
+			fileSize?: number; // bytes from single HEAD request
+			durationSec?: number;
+		}
+
+		interface CbrTrack {
 			quality: { width: number; height: number };
 			bandwidth: number;
 		}
 
-		const evaluateMajin = (majinTracks: VideoTrack[], cbrTracks: VideoTrack[] = []) => {
-			const majin1080Videos = majinTracks.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
-			const majin1080Kbps = majin1080Videos.length > 0 ? Math.max(...majin1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
-			const majinMaxKbps = Math.max(...majinTracks.map((v) => Math.round(v.bandwidth / 1024)));
+		const evaluateMajinActual = (majinTrack: ProbedTrack, cbrTracks: CbrTrack[] = []) => {
+			const actualBps =
+				majinTrack.fileSize && majinTrack.durationSec && majinTrack.durationSec > 0
+					? Math.round((majinTrack.fileSize * 8) / majinTrack.durationSec)
+					: majinTrack.manifestBandwidth;
+			const actualKbps = Math.round(actualBps / 1000);
 
 			const cbr1080Videos = cbrTracks.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
-			const cbr1080Kbps = cbr1080Videos.length > 0 ? Math.max(...cbr1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
-			const cbrMaxKbps = cbrTracks.length > 0 ? Math.max(...cbrTracks.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+			const cbr1080Bps = cbr1080Videos.length > 0 ? Math.max(...cbr1080Videos.map((v) => v.bandwidth)) : 0;
+			const cbr1080Kbps = Math.round(cbr1080Bps / 1000);
+
+			const cbrMaxBps = cbrTracks.length > 0 ? Math.max(...cbrTracks.map((v) => v.bandwidth)) : 0;
+			const cbrMaxKbps = Math.round(cbrMaxBps / 1000);
+
+			const isMajin1080 = majinTrack.quality.height >= 1080 || majinTrack.quality.width >= 1920;
 
 			if (cbr1080Kbps > 0) {
-				if (majin1080Kbps === 0) return { enabled: false, reason: 'resolution_downgrade' };
-				if (majin1080Kbps > cbr1080Kbps) return { enabled: true, reason: 'beats_cbr' };
-				return { enabled: false, reason: 'cbr_higher' };
+				if (!isMajin1080) return { enabled: false, reason: 'resolution_downgrade', actualKbps, cbrKbps: cbr1080Kbps };
+				if (actualBps > cbr1080Bps) return { enabled: true, reason: 'beats_cbr', actualKbps, cbrKbps: cbr1080Kbps };
+				return { enabled: false, reason: 'cbr_higher', actualKbps, cbrKbps: cbr1080Kbps };
 			} else if (cbrMaxKbps > 0) {
-				return { enabled: majinMaxKbps > cbrMaxKbps, reason: majinMaxKbps > cbrMaxKbps ? 'beats_cbr_sd' : 'cbr_higher_sd' };
+				return {
+					enabled: actualBps > cbrMaxBps,
+					reason: actualBps > cbrMaxBps ? 'beats_cbr_sd' : 'cbr_higher_sd',
+					actualKbps,
+					cbrKbps: cbrMaxKbps
+				};
 			} else {
 				const benchmarkThreshold = 11000;
-				return { enabled: majin1080Kbps >= benchmarkThreshold, reason: 'benchmark_fallback' };
+				return {
+					enabled: actualKbps >= benchmarkThreshold,
+					reason: 'benchmark_fallback',
+					actualKbps,
+					cbrKbps: benchmarkThreshold
+				};
 			}
 		};
 
-		// 1. Mushoku Tensei Ep 10: Majin 1080p (12500 kbps) > CBR 1080p (10307 kbps) -> ENABLED
-		const ep10Result = evaluateMajin(
-			[{ quality: { width: 1920, height: 1080 }, bandwidth: 12500 * 1024 }],
-			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10307 * 1024 }]
+		// 1. Mushoku Tensei Ep 10 (GE00374462JAJP): MPD claimed 12800 kbps, but actual probed file is 1,705,314,889 bytes @ 1420.044s = 9607 kbps.
+		// CBR is 10555 kbps. Because CBR (10555 kbps) > Majin actual (9607 kbps), Majin MUST BE DISABLED!
+		const ep10Real = evaluateMajinActual(
+			{
+				quality: { width: 1920, height: 1080 },
+				manifestBandwidth: 12800472,
+				fileSize: 1705314889,
+				durationSec: 1420.044
+			},
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10554570 }]
 		);
-		expect(ep10Result.enabled).toBe(true);
-		expect(ep10Result.reason).toBe('beats_cbr');
+		expect(ep10Real.actualKbps).toBe(9607);
+		expect(ep10Real.cbrKbps).toBe(10555);
+		expect(ep10Real.enabled).toBe(false);
+		expect(ep10Real.reason).toBe('cbr_higher');
 
-		// 2. Mushoku Tensei Ep 11 (Turning Point 4): Majin 1080p (9437 kbps) < CBR 1080p (10886 kbps) -> DISABLED
-		const ep11Result = evaluateMajin(
-			[{ quality: { width: 1920, height: 1080 }, bandwidth: 9437 * 1024 }],
-			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10886 * 1024 }]
+		// 2. High-quality Majin encode: actual filesize gives 14,000 kbps vs CBR 10,555 kbps -> ENABLED
+		const highMajin = evaluateMajinActual(
+			{
+				quality: { width: 1920, height: 1080 },
+				manifestBandwidth: 15000000,
+				fileSize: 2485000000,
+				durationSec: 1420.0
+			},
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10554570 }]
 		);
-		expect(ep11Result.enabled).toBe(false);
-		expect(ep11Result.reason).toBe('cbr_higher');
+		expect(highMajin.actualKbps).toBe(14000);
+		expect(highMajin.enabled).toBe(true);
+		expect(highMajin.reason).toBe('beats_cbr');
 
-		// 3. Resolution downgrade check: Majin has 900p (12343 kbps), CBR is 1080p (10355 kbps) -> DISABLED
-		const downgradeResult = evaluateMajin(
-			[{ quality: { width: 1600, height: 900 }, bandwidth: 12343 * 1024 }],
-			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10355 * 1024 }]
+		// 3. Resolution downgrade check: Majin has 900p (12343 kbps actual), CBR is 1080p (10355 kbps) -> DISABLED
+		const downgradeResult = evaluateMajinActual(
+			{
+				quality: { width: 1600, height: 900 },
+				manifestBandwidth: 12343000,
+				fileSize: 2190000000,
+				durationSec: 1420.0
+			},
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10355000 }]
 		);
 		expect(downgradeResult.enabled).toBe(false);
 		expect(downgradeResult.reason).toBe('resolution_downgrade');
 
-		// 4. Classic SD (Dragon Ball 480p): Majin 480p (2758 kbps) > CBR 480p (2596 kbps) -> ENABLED
-		const sdResult = evaluateMajin([{ quality: { width: 640, height: 480 }, bandwidth: 2758 * 1024 }], [{ quality: { width: 640, height: 480 }, bandwidth: 2596 * 1024 }]);
+		// 4. Classic SD (Dragon Ball 480p): Majin 480p (2758 kbps actual) > CBR 480p (2596 kbps) -> ENABLED
+		const sdResult = evaluateMajinActual(
+			{
+				quality: { width: 640, height: 480 },
+				manifestBandwidth: 2758000,
+				fileSize: 489545000,
+				durationSec: 1420.0
+			},
+			[{ quality: { width: 640, height: 480 }, bandwidth: 2596000 }]
+		);
 		expect(sdResult.enabled).toBe(true);
 		expect(sdResult.reason).toBe('beats_cbr_sd');
 
 		// 5. Fallback benchmark (when CBR unavailable): 12000 kbps >= 11000 kbps -> ENABLED, 10000 kbps -> DISABLED
-		expect(evaluateMajin([{ quality: { width: 1920, height: 1080 }, bandwidth: 12000 * 1024 }]).enabled).toBe(true);
-		expect(evaluateMajin([{ quality: { width: 1920, height: 1080 }, bandwidth: 10000 * 1024 }]).enabled).toBe(false);
+		expect(
+			evaluateMajinActual({
+				quality: { width: 1920, height: 1080 },
+				manifestBandwidth: 12000000,
+				fileSize: 2130000000,
+				durationSec: 1420.0
+			}).enabled
+		).toBe(true);
+		expect(
+			evaluateMajinActual({
+				quality: { width: 1920, height: 1080 },
+				manifestBandwidth: 10000000,
+				fileSize: 1775000000,
+				durationSec: 1420.0
+			}).enabled
+		).toBe(false);
 	});
 
 	test('list-formats and -F parameter parsing and synchronization', () => {

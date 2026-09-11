@@ -29,6 +29,8 @@ export type PlaylistItem = {
 	pssh_wvd?: string;
 	pssh_prd?: string;
 	bandwidth: number;
+	actualBitrate?: number;
+	byteLength?: number;
 	segments: Segment[];
 };
 
@@ -67,10 +69,21 @@ function extractPSSH(manifest: string, schemeIdUri: string, psshTagNames: string
 	return null;
 }
 
+export function parseISODuration(durationStr?: string): number {
+	if (!durationStr) return 0;
+	const match = durationStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+	if (!match) return 0;
+	const hours = parseFloat(match[1] || '0');
+	const minutes = parseFloat(match[2] || '0');
+	const seconds = parseFloat(match[3] || '0');
+	return hours * 3600 + minutes * 60 + seconds;
+}
+
 export async function parse(manifest: string, language?: LanguageItem, url?: string) {
 	if (!manifest.includes('BaseURL') && url) {
 		manifest = manifest.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${url}</BaseURL>`);
 	}
+	const manifestDuration = parseISODuration(manifest.match(/mediaPresentationDuration="([^"]+)"/)?.[1]);
 	const parsed = mpdParse(manifest);
 	const ret: MPDParsed = {};
 
@@ -167,6 +180,8 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 		const host = new URL(playlist.resolvedUri).hostname;
 		if (!Object.prototype.hasOwnProperty.call(ret, host)) ret[host] = { audio: [], video: [] };
 
+		let actualBitrate: number | undefined;
+		let byteLength: number | undefined;
 		if (playlist.sidx && playlist.segments.length == 0) {
 			const options: FetchParams = {
 				method: 'HEAD'
@@ -178,8 +193,12 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 				);
 			}
 			const clHeader = itemReq.res?.headers?.get('content-length');
-			const byteLength = clHeader ? parseInt(clHeader, 10) : NaN;
-			if (!isNaN(byteLength) && byteLength > 0) {
+			const parsedByteLength = clHeader ? parseInt(clHeader, 10) : NaN;
+			if (!isNaN(parsedByteLength) && parsedByteLength > 0) {
+				byteLength = parsedByteLength;
+				if (manifestDuration > 0) {
+					actualBitrate = Math.round((byteLength * 8) / manifestDuration);
+				}
 				let currentByte = playlist.sidx.map.byterange.length;
 				while (currentByte <= byteLength) {
 					playlist.segments.push({
@@ -207,8 +226,10 @@ export async function parse(manifest: string, language?: LanguageItem, url?: str
 		}
 
 		const pItem: VideoPlayList = {
-			bandwidth: playlist.attributes.BANDWIDTH,
+			bandwidth: actualBitrate ?? playlist.attributes.BANDWIDTH,
 			quality: playlist.attributes.RESOLUTION!,
+			actualBitrate,
+			byteLength,
 			segments: playlist.segments.map((segment): Segment => {
 				const uri = segment.resolvedUri;
 				const map_uri = segment.map.resolvedUri;
