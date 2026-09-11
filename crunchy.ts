@@ -1851,7 +1851,7 @@ export default class Crunchy implements ServiceClass {
 					const rawUrl = derivedPlaystreams['']?.url || Object.values(derivedPlaystreams)[0]?.url;
 					if (rawUrl) {
 						const majinUrl = this.applyMajinTransform(rawUrl);
-						const majinReq = await this.req.getData(majinUrl, AuthHeaders);
+						const [cbrReq, majinReq] = await Promise.all([this.req.getData(rawUrl, AuthHeaders), this.req.getData(majinUrl, AuthHeaders)]);
 						if (majinReq.ok && majinReq.res) {
 							const majinBody = await majinReq.res.text();
 							if (majinBody.includes('MPD')) {
@@ -1860,24 +1860,97 @@ export default class Crunchy implements ServiceClass {
 									langsData.findLang(langsData.fixLanguageTag(pbData.meta.audio_locale as string) || ''),
 									majinUrl.match(/.*\.urlset\//)?.[0]
 								);
-								const firstServer = Object.keys(parsedMajin)[0];
-								if (firstServer && parsedMajin[firstServer]?.video) {
-									const maxKbps = Math.max(...parsedMajin[firstServer].video.map((v) => Math.round(v.bandwidth / 1024)));
-									const hasHighQualityMajin = parsedMajin[firstServer].video.some((v) => {
-										const kbps = Math.round(v.bandwidth / 1024);
-										const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
-										return is1080pPlus && kbps >= 7500;
-									});
-									if (hasHighQualityMajin) {
-										console.info(`[Majin] Candidate stream found with bitrate >= 7500 kbps (${maxKbps} kbps, 1080p+). Automatically enabling Majin mode.`);
-										options.majin = true;
-										majinStatus = `ENABLED (auto: ${maxKbps} kbps)`;
-										for (const key in derivedPlaystreams) {
-											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+								const firstMajinServer = Object.keys(parsedMajin)[0];
+								const majinVideos = firstMajinServer ? parsedMajin[firstMajinServer]?.video || [] : [];
+								if (majinVideos.length > 0) {
+									const majin1080Videos = majinVideos.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
+									const majin1080Kbps = majin1080Videos.length > 0 ? Math.max(...majin1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+									const majinMaxKbps = Math.max(...majinVideos.map((v) => Math.round(v.bandwidth / 1024)));
+
+									// Parse standard CBR stream to compare head-to-head
+									let cbr1080Kbps = 0;
+									let cbrMaxKbps = 0;
+									if (cbrReq.ok && cbrReq.res) {
+										const cbrBody = await cbrReq.res.text();
+										if (cbrBody.includes('MPD')) {
+											const parsedCbr = await parse(
+												cbrBody,
+												langsData.findLang(langsData.fixLanguageTag(pbData.meta.audio_locale as string) || ''),
+												rawUrl.match(/.*\.urlset\//)?.[0]
+											);
+											const firstCbrServer = Object.keys(parsedCbr)[0];
+											const cbrVideos = firstCbrServer ? parsedCbr[firstCbrServer]?.video || [] : [];
+											if (cbrVideos.length > 0) {
+												const cbr1080Videos = cbrVideos.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
+												cbr1080Kbps = cbr1080Videos.length > 0 ? Math.max(...cbr1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+												cbrMaxKbps = Math.max(...cbrVideos.map((v) => Math.round(v.bandwidth / 1024)));
+											}
+										}
+									}
+
+									// Head-to-head comparison
+									if (cbr1080Kbps > 0) {
+										// Standard CBR has 1080p
+										if (majin1080Kbps === 0) {
+											// Majin lacks 1080p (e.g. 900p or 720p downgrade)
+											console.info(
+												`[Majin] Stream rejected: Majin lacks 1080p (max resolution is ${majinVideos[0]?.quality.width}x${majinVideos[0]?.quality.height} @ ${majinMaxKbps} kbps, CBR is 1080p @ ${cbr1080Kbps} kbps). Keeping standard stream.`
+											);
+											majinStatus = `DISABLED (Majin < 1080p, max: ${majinMaxKbps} kbps)`;
+										} else if (majin1080Kbps > cbr1080Kbps) {
+											// Majin 1080p beats CBR 1080p!
+											const delta = majin1080Kbps - cbr1080Kbps;
+											const deltaPercent = ((delta / cbr1080Kbps) * 100).toFixed(1);
+											console.info(
+												`[Majin] Majin 1080p (${majin1080Kbps} kbps) beats standard CBR (${cbr1080Kbps} kbps) by +${delta} kbps (+${deltaPercent}%). Automatically enabling Majin mode.`
+											);
+											options.majin = true;
+											majinStatus = `ENABLED (auto: ${majin1080Kbps} kbps vs CBR ${cbr1080Kbps} kbps, +${delta} kbps)`;
+											for (const key in derivedPlaystreams) {
+												derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+											}
+										} else {
+											// CBR 1080p beats or equals Majin 1080p (e.g. Turning Point 4)
+											const delta = cbr1080Kbps - majin1080Kbps;
+											console.info(
+												`[Majin] Standard CBR 1080p (${cbr1080Kbps} kbps) beats or equals Majin (${majin1080Kbps} kbps, delta: -${delta} kbps). Keeping standard stream.`
+											);
+											majinStatus = `DISABLED (CBR ${cbr1080Kbps} kbps >= Majin ${majin1080Kbps} kbps)`;
+										}
+									} else if (cbrMaxKbps > 0) {
+										// Non-1080p content (e.g. classic SD 480p like Dragon Ball)
+										if (majinMaxKbps > cbrMaxKbps) {
+											const delta = majinMaxKbps - cbrMaxKbps;
+											console.info(
+												`[Majin] Majin (${majinMaxKbps} kbps) beats standard CBR (${cbrMaxKbps} kbps) by +${delta} kbps. Automatically enabling Majin mode.`
+											);
+											options.majin = true;
+											majinStatus = `ENABLED (auto: ${majinMaxKbps} kbps vs CBR ${cbrMaxKbps} kbps, +${delta} kbps)`;
+											for (const key in derivedPlaystreams) {
+												derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+											}
+										} else {
+											console.info(`[Majin] Standard CBR (${cbrMaxKbps} kbps) beats or equals Majin (${majinMaxKbps} kbps). Keeping standard stream.`);
+											majinStatus = `DISABLED (CBR ${cbrMaxKbps} kbps >= Majin ${majinMaxKbps} kbps)`;
 										}
 									} else {
-										console.info(`[Majin] Stream checked: max 1080p bitrate is ${maxKbps} kbps (< 7500 kbps threshold). Keeping standard stream.`);
-										majinStatus = `DISABLED (< 7500 kbps, max: ${maxKbps} kbps)`;
+										// CBR stream could not be parsed, fallback to catalog dataset baseline (~11,000 kbps average CBR)
+										const benchmarkThreshold = 11000;
+										if (majin1080Kbps >= benchmarkThreshold) {
+											console.info(
+												`[Majin] Candidate stream found with bitrate >= ${benchmarkThreshold} kbps (${majin1080Kbps} kbps, 1080p+). Automatically enabling Majin mode.`
+											);
+											options.majin = true;
+											majinStatus = `ENABLED (auto: ${majin1080Kbps} kbps)`;
+											for (const key in derivedPlaystreams) {
+												derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+											}
+										} else {
+											console.info(
+												`[Majin] Stream checked: max 1080p bitrate is ${majin1080Kbps} kbps (< ${benchmarkThreshold} kbps benchmark). Keeping standard stream.`
+											);
+											majinStatus = `DISABLED (< ${benchmarkThreshold} kbps, max: ${majin1080Kbps} kbps)`;
+										}
 									}
 								} else {
 									console.info('[Majin] Stream manifest has no video tracks, keeping standard stream.');

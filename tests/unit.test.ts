@@ -189,24 +189,65 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		expect(argvC.series).toBe('G4PH0WXVJ');
 	});
 
-	test('Majin candidate stream evaluation requires 1080p+ and min 7.5MB/s (7500 kbps)', () => {
-		const checkMajinCandidate = (v: { quality: { width: number; height: number }; bandwidth: number }) => {
-			const kbps = Math.round(v.bandwidth / 1024);
-			const is1080pPlus = v.quality.height >= 1080 || v.quality.width >= 1920;
-			return is1080pPlus && kbps >= 7500;
+	test('Majin candidate stream evaluation with head-to-head CBR comparison and resolution checks', () => {
+		interface VideoTrack {
+			quality: { width: number; height: number };
+			bandwidth: number;
+		}
+
+		const evaluateMajin = (majinTracks: VideoTrack[], cbrTracks: VideoTrack[] = []) => {
+			const majin1080Videos = majinTracks.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
+			const majin1080Kbps = majin1080Videos.length > 0 ? Math.max(...majin1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+			const majinMaxKbps = Math.max(...majinTracks.map((v) => Math.round(v.bandwidth / 1024)));
+
+			const cbr1080Videos = cbrTracks.filter((v) => v.quality.height >= 1080 || v.quality.width >= 1920);
+			const cbr1080Kbps = cbr1080Videos.length > 0 ? Math.max(...cbr1080Videos.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+			const cbrMaxKbps = cbrTracks.length > 0 ? Math.max(...cbrTracks.map((v) => Math.round(v.bandwidth / 1024))) : 0;
+
+			if (cbr1080Kbps > 0) {
+				if (majin1080Kbps === 0) return { enabled: false, reason: 'resolution_downgrade' };
+				if (majin1080Kbps > cbr1080Kbps) return { enabled: true, reason: 'beats_cbr' };
+				return { enabled: false, reason: 'cbr_higher' };
+			} else if (cbrMaxKbps > 0) {
+				return { enabled: majinMaxKbps > cbrMaxKbps, reason: majinMaxKbps > cbrMaxKbps ? 'beats_cbr_sd' : 'cbr_higher_sd' };
+			} else {
+				const benchmarkThreshold = 11000;
+				return { enabled: majin1080Kbps >= benchmarkThreshold, reason: 'benchmark_fallback' };
+			}
 		};
 
-		// 1080p with 8000 kbps (> 7500 kbps / 7.5 MB/s) -> PASS
-		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 8000 * 1024 })).toBe(true);
+		// 1. Mushoku Tensei Ep 10: Majin 1080p (12500 kbps) > CBR 1080p (10307 kbps) -> ENABLED
+		const ep10Result = evaluateMajin(
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 12500 * 1024 }],
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10307 * 1024 }]
+		);
+		expect(ep10Result.enabled).toBe(true);
+		expect(ep10Result.reason).toBe('beats_cbr');
 
-		// 1080p with exactly 7500 kbps (7.5 MB/s) -> PASS
-		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 7500 * 1024 })).toBe(true);
+		// 2. Mushoku Tensei Ep 11 (Turning Point 4): Majin 1080p (9437 kbps) < CBR 1080p (10886 kbps) -> DISABLED
+		const ep11Result = evaluateMajin(
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 9437 * 1024 }],
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10886 * 1024 }]
+		);
+		expect(ep11Result.enabled).toBe(false);
+		expect(ep11Result.reason).toBe('cbr_higher');
 
-		// 1080p with 7200 kbps (< 7500 kbps / 7.5 MB/s) -> FAIL
-		expect(checkMajinCandidate({ quality: { width: 1920, height: 1080 }, bandwidth: 7200 * 1024 })).toBe(false);
+		// 3. Resolution downgrade check: Majin has 900p (12343 kbps), CBR is 1080p (10355 kbps) -> DISABLED
+		const downgradeResult = evaluateMajin(
+			[{ quality: { width: 1600, height: 900 }, bandwidth: 12343 * 1024 }],
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 10355 * 1024 }]
+		);
+		expect(downgradeResult.enabled).toBe(false);
+		expect(downgradeResult.reason).toBe('resolution_downgrade');
 
-		// 720p (1280x720) even with high bitrate -> FAIL
-		expect(checkMajinCandidate({ quality: { width: 1280, height: 720 }, bandwidth: 8000 * 1024 })).toBe(false);
+		// 4. Classic SD (Dragon Ball 480p): Majin 480p (2758 kbps) > CBR 480p (2596 kbps) -> ENABLED
+		const sdResult = evaluateMajin([{ quality: { width: 640, height: 480 }, bandwidth: 2758 * 1024 }], [{ quality: { width: 640, height: 480 }, bandwidth: 2596 * 1024 }]);
+		expect(sdResult.enabled).toBe(true);
+		expect(sdResult.reason).toBe('beats_cbr_sd');
+
+		// 5. Fallback benchmark (when CBR unavailable): 12000 kbps >= 11000 kbps -> ENABLED, 10000 kbps -> DISABLED
+		expect(evaluateMajin([{ quality: { width: 1920, height: 1080 }, bandwidth: 12000 * 1024 }]).enabled).toBe(true);
+		expect(evaluateMajin([{ quality: { width: 1920, height: 1080 }, bandwidth: 10000 * 1024 }]).enabled).toBe(false);
 	});
 
 	test('list-formats and -F parameter parsing and synchronization', () => {
