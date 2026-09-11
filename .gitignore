@@ -10,6 +10,9 @@
 ffmpeg
 mkvmerge
 token.yml
+token.json
+scratch/
+scratch
 *.exe
 *.dll
 *.mkv

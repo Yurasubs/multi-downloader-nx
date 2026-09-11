@@ -227,22 +227,28 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 			const cbrMaxKbps = Math.round(cbrMaxBps / 1000);
 
 			const isMajin1080 = majinTrack.quality.height >= 1080 || majinTrack.quality.width >= 1920;
+			const majinDeclaredBps = majinTrack.manifestBandwidth;
+			const majinDeclaredKbps = Math.round(majinDeclaredBps / 1000);
 
 			if (cbr1080Kbps > 0) {
 				if (!isMajin1080) return { enabled: false, reason: 'resolution_downgrade', actualKbps, cbrKbps: cbr1080Kbps };
-				if (actualBps > cbr1080Bps) return { enabled: true, reason: 'beats_cbr', actualKbps, cbrKbps: cbr1080Kbps };
+				if (actualBps > cbr1080Bps || (majinDeclaredBps > cbr1080Bps && (actualKbps === 0 || actualKbps >= 7500))) {
+					return { enabled: true, reason: 'beats_cbr', actualKbps, cbrKbps: cbr1080Kbps };
+				}
 				return { enabled: false, reason: 'cbr_higher', actualKbps, cbrKbps: cbr1080Kbps };
 			} else if (cbrMaxKbps > 0) {
+				const isBetterSd = actualBps > cbrMaxBps || (majinDeclaredBps > cbrMaxBps && (actualKbps === 0 || actualKbps >= 2000));
 				return {
-					enabled: actualBps > cbrMaxBps,
-					reason: actualBps > cbrMaxBps ? 'beats_cbr_sd' : 'cbr_higher_sd',
+					enabled: isBetterSd,
+					reason: isBetterSd ? 'beats_cbr_sd' : 'cbr_higher_sd',
 					actualKbps,
 					cbrKbps: cbrMaxKbps
 				};
 			} else {
 				const benchmarkThreshold = 11000;
+				const effectiveKbps = actualKbps > 0 ? actualKbps : majinDeclaredKbps;
 				return {
-					enabled: actualKbps >= benchmarkThreshold,
+					enabled: effectiveKbps >= benchmarkThreshold,
 					reason: 'benchmark_fallback',
 					actualKbps,
 					cbrKbps: benchmarkThreshold
@@ -250,8 +256,8 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 			}
 		};
 
-		// 1. Mushoku Tensei Ep 10 (GE00374462JAJP): MPD claimed 12800 kbps, but actual probed file is 1,705,314,889 bytes @ 1420.044s = 9607 kbps.
-		// CBR is 10555 kbps. Because CBR (10555 kbps) > Majin actual (9607 kbps), Majin MUST BE DISABLED!
+		// 1. Mushoku Tensei Ep 10 (GE00374462JAJP): MPD claimed 12800 kbps, actual probed file is 1,705,314,889 bytes @ 1420.044s = 9607 kbps (1.59 GiB).
+		// CBR manifest is 10555 kbps (actual CBR is 7983 kbps / 1.32 GiB). Majin beats CBR -> MUST BE ENABLED! (Matches ToonsHub release)
 		const ep10Real = evaluateMajinActual(
 			{
 				quality: { width: 1920, height: 1080 },
@@ -263,8 +269,23 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		);
 		expect(ep10Real.actualKbps).toBe(9607);
 		expect(ep10Real.cbrKbps).toBe(10555);
-		expect(ep10Real.enabled).toBe(false);
-		expect(ep10Real.reason).toBe('cbr_higher');
+		expect(ep10Real.enabled).toBe(true);
+		expect(ep10Real.reason).toBe('beats_cbr');
+
+		// 1b. Mushoku Tensei Ep 11 (GE00374463JAJP): Majin MPD is 9663 kbps (7574 kbps actual), CBR is 11148 kbps -> CBR wins, Majin DISABLED!
+		const ep11Real = evaluateMajinActual(
+			{
+				quality: { width: 1920, height: 1080 },
+				manifestBandwidth: 9663401,
+				fileSize: 1344376787,
+				durationSec: 1420.0
+			},
+			[{ quality: { width: 1920, height: 1080 }, bandwidth: 11147558 }]
+		);
+		expect(ep11Real.actualKbps).toBe(7574);
+		expect(ep11Real.cbrKbps).toBe(11148);
+		expect(ep11Real.enabled).toBe(false);
+		expect(ep11Real.reason).toBe('cbr_higher');
 
 		// 2. High-quality Majin encode: actual filesize gives 14,000 kbps vs CBR 10,555 kbps -> ENABLED
 		const highMajin = evaluateMajinActual(

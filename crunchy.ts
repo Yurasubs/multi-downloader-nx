@@ -1927,6 +1927,8 @@ export default class Crunchy implements ServiceClass {
 										cbrMaxKbps = Math.round(cbrMaxBps / 1000);
 									}
 								}
+								const majinDeclaredBps = bestMajinPlaylist?.attributes?.BANDWIDTH ?? 0;
+								const majinDeclaredKbps = Math.round(majinDeclaredBps / 1000);
 
 								// Head-to-head comparison
 								if (cbr1080Kbps > 0) {
@@ -1937,61 +1939,60 @@ export default class Crunchy implements ServiceClass {
 											`[Majin] Stream rejected: Majin lacks 1080p (max is ${bestMajinPlaylist?.attributes.RESOLUTION?.width}x${bestMajinPlaylist?.attributes.RESOLUTION?.height} @ ${majinActualKbps} kbps actual, CBR is 1080p @ ${cbr1080Kbps} kbps). Keeping standard stream.`
 										);
 										majinStatus = `DISABLED (Majin < 1080p, max actual: ${majinActualKbps} kbps)`;
-									} else if (majinActualBps > cbr1080Bps) {
-										// Majin 1080p actual bitrate beats CBR 1080p!
-										const delta = majinActualKbps - cbr1080Kbps;
+									} else if (majinActualBps > cbr1080Bps || (majinDeclaredBps > cbr1080Bps && (majinActualKbps === 0 || majinActualKbps >= 7500))) {
+										// Majin 1080p beats CBR (either actual bitrate beats CBR manifest, or manifest tier beats CBR with high quality probed bitrate >= 7500 kbps)
+										const delta = majinDeclaredKbps - cbr1080Kbps;
 										const deltaPercent = ((delta / cbr1080Kbps) * 100).toFixed(1);
 										console.info(
-											`[Majin] Majin 1080p actual bitrate (${majinActualKbps} kbps) beats standard CBR (${cbr1080Kbps} kbps) by +${delta} kbps (+${deltaPercent}%). Automatically enabling Majin mode.`
+											`[Majin] Majin 1080p (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}) beats standard CBR (${cbr1080Kbps} kbps) by +${delta} kbps (+${deltaPercent}%). Automatically enabling Majin mode.`
 										);
 										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinActualKbps} kbps actual vs CBR ${cbr1080Kbps} kbps, +${delta} kbps)`;
+										majinStatus = `ENABLED (auto: ${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''} vs CBR ${cbr1080Kbps} kbps, +${delta} kbps)`;
 										for (const key in derivedPlaystreams) {
 											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 										}
 									} else {
 										// CBR 1080p beats or equals Majin 1080p
-										const delta = cbr1080Kbps - majinActualKbps;
+										const delta = cbr1080Kbps - (majinDeclaredKbps || majinActualKbps);
 										console.info(
-											`[Majin] Standard CBR 1080p (${cbr1080Kbps} kbps) beats or equals actual Majin bitrate (${majinActualKbps} kbps, delta: -${delta} kbps). Keeping standard stream.`
+											`[Majin] Standard CBR 1080p (${cbr1080Kbps} kbps) beats or equals Majin (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}, delta: -${delta} kbps). Keeping standard stream.`
 										);
-										majinStatus = `DISABLED (CBR ${cbr1080Kbps} kbps >= Majin actual ${majinActualKbps} kbps)`;
+										majinStatus = `DISABLED (CBR ${cbr1080Kbps} kbps >= Majin ${majinDeclaredKbps || majinActualKbps} kbps)`;
 									}
 								} else if (cbrMaxKbps > 0) {
 									// Non-1080p content (e.g. classic SD 480p like Dragon Ball)
-									if (majinActualBps > cbrMaxBps) {
-										const delta = majinActualKbps - cbrMaxKbps;
+									if (majinActualBps > cbrMaxBps || (majinDeclaredBps > cbrMaxBps && (majinActualKbps === 0 || majinActualKbps >= 2000))) {
+										const delta = (majinDeclaredKbps || majinActualKbps) - cbrMaxBps;
 										console.info(
-											`[Majin] Majin actual bitrate (${majinActualKbps} kbps) beats standard CBR (${cbrMaxKbps} kbps) by +${delta} kbps. Automatically enabling Majin mode.`
+											`[Majin] Majin (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}) beats standard CBR (${cbrMaxKbps} kbps) by +${delta} kbps. Automatically enabling Majin mode.`
 										);
 										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinActualKbps} kbps actual vs CBR ${cbrMaxKbps} kbps, +${delta} kbps)`;
+										majinStatus = `ENABLED (auto: ${majinDeclaredKbps} kbps MPD vs CBR ${cbrMaxKbps} kbps, +${delta} kbps)`;
 										for (const key in derivedPlaystreams) {
 											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 										}
 									} else {
-										console.info(
-											`[Majin] Standard CBR (${cbrMaxKbps} kbps) beats or equals actual Majin bitrate (${majinActualKbps} kbps). Keeping standard stream.`
-										);
-										majinStatus = `DISABLED (CBR ${cbrMaxKbps} kbps >= Majin actual ${majinActualKbps} kbps)`;
+										console.info(`[Majin] Standard CBR (${cbrMaxKbps} kbps) beats or equals Majin (${majinDeclaredKbps} kbps MPD). Keeping standard stream.`);
+										majinStatus = `DISABLED (CBR ${cbrMaxKbps} kbps >= Majin ${majinDeclaredKbps} kbps)`;
 									}
 								} else {
 									// CBR stream could not be parsed, fallback to catalog dataset baseline (~11,000 kbps average CBR)
 									const benchmarkThreshold = 11000;
-									if (majinActualKbps >= benchmarkThreshold) {
+									const effectiveKbps = majinActualKbps > 0 ? majinActualKbps : majinDeclaredKbps;
+									if (effectiveKbps >= benchmarkThreshold) {
 										console.info(
-											`[Majin] Candidate stream found with actual bitrate >= ${benchmarkThreshold} kbps (${majinActualKbps} kbps, 1080p+). Automatically enabling Majin mode.`
+											`[Majin] Candidate stream qualifies based on quality baseline (${majinDeclaredKbps} kbps MPD / ${majinActualKbps} kbps actual, threshold: ${benchmarkThreshold} kbps). Automatically enabling Majin mode.`
 										);
 										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinActualKbps} kbps actual)`;
+										majinStatus = `ENABLED (auto: ${majinActualKbps > 0 ? `${majinActualKbps} kbps actual` : `${majinDeclaredKbps} kbps`})`;
 										for (const key in derivedPlaystreams) {
 											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
 										}
 									} else {
 										console.info(
-											`[Majin] Stream checked: max 1080p actual bitrate is ${majinActualKbps} kbps (< ${benchmarkThreshold} kbps benchmark). Keeping standard stream.`
+											`[Majin] Candidate stream rejected: below quality threshold (actual: ${majinActualKbps} kbps, MPD: ${majinDeclaredKbps} kbps, threshold: 7500 kbps). Keeping standard stream.`
 										);
-										majinStatus = `DISABLED (< ${benchmarkThreshold} kbps, actual: ${majinActualKbps} kbps)`;
+										majinStatus = `DISABLED (Majin ${majinActualKbps || majinDeclaredKbps} kbps < 7500 kbps)`;
 									}
 								}
 							} else {
