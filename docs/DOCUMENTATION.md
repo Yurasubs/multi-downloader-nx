@@ -227,6 +227,12 @@ Select a specific Crunchyroll audio playback endpoint by device. android provide
 | Crunchyroll | `--majin ` | `boolean` | `No`| `NaN` | `false`| `majin: ` |
 
 Enable Majin quality mode which transforms stream URLs for higher quality CENC DASH streams.
+#### `--cbr`
+| **Service** | **Usage** | **Type** | **Required** | **Alias** |  **cli-default Entry**
+| --- | --- | --- | --- | --- | ---| 
+| Crunchyroll | `--cbr [0|1]` | `string` | `No`| `NaN` | `NaN` |
+
+Force CBR stream instead of auto-evaluation (0 = High-Bitrate, 1 = Standard)
 #### `--tsd`
 | **Service** | **Usage** | **Type** | **Required** | **Alias** |  **Default** |**cli-default Entry**
 | --- | --- | --- | --- | --- | --- | ---| 
