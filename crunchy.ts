@@ -34,7 +34,7 @@ import { AvailableFilenameVars, getDefault } from './modules/module.args';
 import { AuthData, AuthResponse, Episode, ResponseBase, SearchData, SearchResponse, SearchResponseItem } from './@types/messageHandler';
 import { ServiceClass } from './@types/serviceClassInterface';
 import { CrunchyAndroidEpisodes } from './@types/crunchyAndroidEpisodes';
-import { parse, parseISODuration } from './modules/module.transform-mpd';
+import { parse, parseISODuration, formatBytes } from './modules/module.transform-mpd';
 import { parse as mpdParse } from 'mpd-parser';
 import { AndroidObject, CrunchyAndroidObject, CrunchyMVObject } from './@types/crunchyAndroidObject';
 import { CrunchyChapters, CrunchyChapter, CrunchyOldChapter } from './@types/crunchyChapters';
@@ -1549,7 +1549,17 @@ export default class Crunchy implements ServiceClass {
 	}
 
 	private applyMajinTransform(url: string): string {
+		if (url.includes('/static/majin/')) {
+			return url.replace(/\/(?:\d+\/)?clean\/dash\//, '/clean/cenc/dash/');
+		}
 		return url.replace('/static/', '/static/majin/').replace(/\/(?:\d+\/)?clean\/dash\//, '/clean/cenc/dash/');
+	}
+
+	private applyCbrTransform(url: string, streamIndex: '0' | '1' | string = '0'): string {
+		if (url.includes('/static/majin/')) {
+			return url.replace('/static/majin/', '/static/').replace(/\/(?:\d+\/)?clean\/(?:cenc\/)?dash\//, `/${streamIndex}/clean/dash/`);
+		}
+		return url.replace(/\/(?:\d+\/)?clean\/(?:cenc\/)?dash\//, `/${streamIndex}/clean/dash/`);
 	}
 
 	public async downloadMediaList(
@@ -1852,156 +1862,201 @@ export default class Crunchy implements ServiceClass {
 					const rawUrl = derivedPlaystreams['']?.url || Object.values(derivedPlaystreams)[0]?.url;
 					if (rawUrl) {
 						const majinUrl = this.applyMajinTransform(rawUrl);
-						const [cbrReq, majinReq] = await Promise.all([this.req.getData(rawUrl, AuthHeaders), this.req.getData(majinUrl, AuthHeaders)]);
-						if (majinReq.ok && majinReq.res) {
-							const majinBody = await majinReq.res.text();
-							const cbrBody = cbrReq.ok && cbrReq.res ? await cbrReq.res.text() : '';
-							if (majinBody.includes('MPD')) {
-								// Parse ISO duration from manifest (or fallback to CMS metadata)
-								const durationSec =
-									parseISODuration(majinBody.match(/mediaPresentationDuration="([^"]+)"/)?.[1]) || (mMeta?.durationMs ? mMeta.durationMs / 1000 : 0);
+						const cbr0Url = this.applyCbrTransform(rawUrl, '0');
+						const cbr1Url = this.applyCbrTransform(rawUrl, '1');
 
-								// Parse Majin MPD synchronously in memory to find the best stream
-								let majinMpd = majinBody;
-								if (!majinMpd.includes('BaseURL') && majinUrl) {
-									majinMpd = majinMpd.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${majinUrl}</BaseURL>`);
-								}
-								const parsedMajinMpd = mpdParse(majinMpd);
-								const majinPlaylists = parsedMajinMpd.playlists?.filter((p) => p.attributes?.RESOLUTION) || [];
-								const majin1080Playlists = majinPlaylists.filter(
-									(p) => (p.attributes.RESOLUTION?.height ?? 0) >= 1080 || (p.attributes.RESOLUTION?.width ?? 0) >= 1920
-								);
-								const bestMajinPlaylist = (majin1080Playlists.length > 0 ? majin1080Playlists : majinPlaylists).sort(
-									(a, b) => (b.attributes?.BANDWIDTH ?? 0) - (a.attributes?.BANDWIDTH ?? 0)
-								)[0];
+						const [majinReq, cbr0Req, cbr1Req] = await Promise.all([
+							this.req.getData(majinUrl, AuthHeaders),
+							this.req.getData(cbr0Url, AuthHeaders),
+							this.req.getData(cbr1Url, AuthHeaders)
+						]);
 
-								// Get actual bitrate using filesize and duration in a single request to the best stream of Majin
-								let majinActualBps = 0;
-								let majinActualKbps = 0;
+						const majinBody = majinReq.ok && majinReq.res ? await majinReq.res.text() : '';
+						const cbr0Body = cbr0Req.ok && cbr0Req.res ? await cbr0Req.res.text() : '';
+						const cbr1Body = cbr1Req.ok && cbr1Req.res ? await cbr1Req.res.text() : '';
+
+						const durationSec =
+							parseISODuration((majinBody || cbr0Body || cbr1Body).match(/mediaPresentationDuration="([^"]+)"/)?.[1]) ||
+							(medias?.data?.[0]?.durationMs ? medias.data[0].durationMs / 1000 : 0);
+
+						interface EvaluatedCandidate {
+							key: 'majin' | 'cbr0' | 'cbr1';
+							name: string;
+							url: string;
+							resWidth: number;
+							resHeight: number;
+							declaredBps: number;
+							actualBps: number;
+							estFileSizeBytes: number;
+							is1080p: boolean;
+							transform: (u: string) => string;
+						}
+
+						const candidates: EvaluatedCandidate[] = [];
+
+						// 1. Majin candidate
+						if (majinBody.includes('MPD')) {
+							let mpd = majinBody;
+							if (!mpd.includes('BaseURL') && majinUrl) {
+								mpd = mpd.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${majinUrl}</BaseURL>`);
+							}
+							const parsed = mpdParse(mpd);
+							const pls = parsed.playlists?.filter((p) => p.attributes?.RESOLUTION) || [];
+							const pls1080 = pls.filter((p) => (p.attributes.RESOLUTION?.height ?? 0) >= 1080 || (p.attributes.RESOLUTION?.width ?? 0) >= 1920);
+							const best = (pls1080.length > 0 ? pls1080 : pls).sort((a, b) => (b.attributes?.BANDWIDTH ?? 0) - (a.attributes?.BANDWIDTH ?? 0))[0];
+							if (best) {
 								let majinFileSize = 0;
-								if (bestMajinPlaylist) {
-									const targetUri = bestMajinPlaylist.sidx?.uri || bestMajinPlaylist.resolvedUri;
-									if (targetUri) {
-										const headRes = await this.req.getData(targetUri, { method: 'HEAD', ...AuthHeaders });
-										if (headRes.ok && headRes.res) {
-											const cl = headRes.res.headers.get('content-length');
-											majinFileSize = cl ? parseInt(cl, 10) : 0;
-										}
-									}
-									if (majinFileSize > 0 && durationSec > 0) {
-										majinActualBps = Math.round((majinFileSize * 8) / durationSec);
-										majinActualKbps = Math.round(majinActualBps / 1000);
-										const gib = (majinFileSize / (1024 * 1024 * 1024)).toFixed(2);
-										const durMin = Math.floor(durationSec / 60);
-										const durSecRem = Math.round(durationSec % 60);
-										console.info(
-											`[Majin] Probed top stream in 1 request: ${bestMajinPlaylist.attributes.RESOLUTION?.width}x${bestMajinPlaylist.attributes.RESOLUTION?.height}, filesize: ${gib} GiB (${majinFileSize.toLocaleString()} bytes), duration: ${durMin}m${durSecRem}s (${durationSec.toFixed(1)}s) -> actual bitrate: ${majinActualKbps} kbps (MPD declared: ${Math.round(bestMajinPlaylist.attributes.BANDWIDTH / 1000)} kbps)`
-										);
-									} else {
-										majinActualBps = bestMajinPlaylist.attributes.BANDWIDTH;
-										majinActualKbps = Math.round(majinActualBps / 1000);
+								const targetUri = best.sidx?.uri || best.resolvedUri;
+								if (targetUri) {
+									const headRes = await this.req.getData(targetUri, { method: 'HEAD', ...AuthHeaders });
+									if (headRes.ok && headRes.res) {
+										const cl = headRes.res.headers.get('content-length');
+										majinFileSize = cl ? parseInt(cl, 10) : 0;
 									}
 								}
+								const majinActualBps = majinFileSize > 0 && durationSec > 0 ? Math.round((majinFileSize * 8) / durationSec) : best.attributes.BANDWIDTH;
+								const w = best.attributes.RESOLUTION?.width || 0;
+								const h = best.attributes.RESOLUTION?.height || 0;
+								const fileSizeBytes = majinFileSize > 0 ? majinFileSize : durationSec > 0 ? Math.round((best.attributes.BANDWIDTH * durationSec) / 8) : 0;
+								candidates.push({
+									key: 'majin',
+									name: 'Majin (Bitmovin VBR)',
+									url: majinUrl,
+									resWidth: w,
+									resHeight: h,
+									declaredBps: best.attributes.BANDWIDTH,
+									actualBps: majinActualBps,
+									estFileSizeBytes: fileSizeBytes,
+									is1080p: h >= 1080 || w >= 1920,
+									transform: (u: string) => this.applyMajinTransform(u)
+								});
+							}
+						}
 
-								// Parse standard CBR stream in memory to compare head-to-head
-								let cbr1080Bps = 0;
-								let cbrMaxBps = 0;
-								let cbr1080Kbps = 0;
-								let cbrMaxKbps = 0;
-								if (cbrBody.includes('MPD')) {
-									let cbrMpd = cbrBody;
-									if (!cbrMpd.includes('BaseURL') && rawUrl) {
-										cbrMpd = cbrMpd.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${rawUrl}</BaseURL>`);
-									}
-									const parsedCbrMpd = mpdParse(cbrMpd);
-									const cbrPlaylists = parsedCbrMpd.playlists?.filter((p) => p.attributes?.RESOLUTION) || [];
-									const cbr1080Playlists = cbrPlaylists.filter(
-										(p) => (p.attributes.RESOLUTION?.height ?? 0) >= 1080 || (p.attributes.RESOLUTION?.width ?? 0) >= 1920
-									);
-									if (cbr1080Playlists.length > 0) {
-										cbr1080Bps = Math.max(...cbr1080Playlists.map((p) => p.attributes.BANDWIDTH));
-										cbr1080Kbps = Math.round(cbr1080Bps / 1000);
-									}
-									if (cbrPlaylists.length > 0) {
-										cbrMaxBps = Math.max(...cbrPlaylists.map((p) => p.attributes.BANDWIDTH));
-										cbrMaxKbps = Math.round(cbrMaxBps / 1000);
-									}
-								}
-								const majinDeclaredBps = bestMajinPlaylist?.attributes?.BANDWIDTH ?? 0;
-								const majinDeclaredKbps = Math.round(majinDeclaredBps / 1000);
+						// 2. CBR 0 (High-Bitrate) candidate
+						if (cbr0Body.includes('MPD')) {
+							let mpd = cbr0Body;
+							if (!mpd.includes('BaseURL') && cbr0Url) {
+								mpd = mpd.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${cbr0Url}</BaseURL>`);
+							}
+							const parsed = mpdParse(mpd);
+							const pls = parsed.playlists?.filter((p) => p.attributes?.RESOLUTION) || [];
+							const pls1080 = pls.filter((p) => (p.attributes.RESOLUTION?.height ?? 0) >= 1080 || (p.attributes.RESOLUTION?.width ?? 0) >= 1920);
+							const best = (pls1080.length > 0 ? pls1080 : pls).sort((a, b) => (b.attributes?.BANDWIDTH ?? 0) - (a.attributes?.BANDWIDTH ?? 0))[0];
+							if (best) {
+								const w = best.attributes.RESOLUTION?.width || 0;
+								const h = best.attributes.RESOLUTION?.height || 0;
+								const estBytes = durationSec > 0 ? Math.round((best.attributes.BANDWIDTH * durationSec) / 8) : 0;
+								candidates.push({
+									key: 'cbr0',
+									name: 'CBR 0 (High-Bitrate)',
+									url: cbr0Url,
+									resWidth: w,
+									resHeight: h,
+									declaredBps: best.attributes.BANDWIDTH,
+									actualBps: best.attributes.BANDWIDTH,
+									estFileSizeBytes: estBytes,
+									is1080p: h >= 1080 || w >= 1920,
+									transform: (u: string) => this.applyCbrTransform(u, '0')
+								});
+							}
+						}
 
-								// Head-to-head comparison
-								if (cbr1080Kbps > 0) {
-									// Standard CBR has 1080p
-									if (majin1080Playlists.length === 0) {
-										// Majin lacks 1080p (e.g. 900p or 720p downgrade)
-										console.info(
-											`[Majin] Stream rejected: Majin lacks 1080p (max is ${bestMajinPlaylist?.attributes.RESOLUTION?.width}x${bestMajinPlaylist?.attributes.RESOLUTION?.height} @ ${majinActualKbps} kbps actual, CBR is 1080p @ ${cbr1080Kbps} kbps). Keeping standard stream.`
-										);
-										majinStatus = `DISABLED (Majin < 1080p, max actual: ${majinActualKbps} kbps)`;
-									} else if (majinActualBps > cbr1080Bps || (majinDeclaredBps > cbr1080Bps && (majinActualKbps === 0 || majinActualKbps >= 7500))) {
-										// Majin 1080p beats CBR (either actual bitrate beats CBR manifest, or manifest tier beats CBR with high quality probed bitrate >= 7500 kbps)
-										const delta = majinDeclaredKbps - cbr1080Kbps;
-										const deltaPercent = ((delta / cbr1080Kbps) * 100).toFixed(1);
-										console.info(
-											`[Majin] Majin 1080p (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}) beats standard CBR (${cbr1080Kbps} kbps) by +${delta} kbps (+${deltaPercent}%). Automatically enabling Majin mode.`
-										);
-										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''} vs CBR ${cbr1080Kbps} kbps, +${delta} kbps)`;
-										for (const key in derivedPlaystreams) {
-											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+						// 3. CBR 1 (Standard CBR) candidate
+						if (cbr1Body.includes('MPD')) {
+							let mpd = cbr1Body;
+							if (!mpd.includes('BaseURL') && cbr1Url) {
+								mpd = mpd.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${cbr1Url}</BaseURL>`);
+							}
+							const parsed = mpdParse(mpd);
+							const pls = parsed.playlists?.filter((p) => p.attributes?.RESOLUTION) || [];
+							const pls1080 = pls.filter((p) => (p.attributes.RESOLUTION?.height ?? 0) >= 1080 || (p.attributes.RESOLUTION?.width ?? 0) >= 1920);
+							const best = (pls1080.length > 0 ? pls1080 : pls).sort((a, b) => (b.attributes?.BANDWIDTH ?? 0) - (a.attributes?.BANDWIDTH ?? 0))[0];
+							if (best) {
+								const w = best.attributes.RESOLUTION?.width || 0;
+								const h = best.attributes.RESOLUTION?.height || 0;
+								const estBytes = durationSec > 0 ? Math.round((best.attributes.BANDWIDTH * durationSec) / 8) : 0;
+								candidates.push({
+									key: 'cbr1',
+									name: 'CBR 1 (Standard CBR)',
+									url: cbr1Url,
+									resWidth: w,
+									resHeight: h,
+									declaredBps: best.attributes.BANDWIDTH,
+									actualBps: best.attributes.BANDWIDTH,
+									estFileSizeBytes: estBytes,
+									is1080p: h >= 1080 || w >= 1920,
+									transform: (u: string) => this.applyCbrTransform(u, '1')
+								});
+							}
+						}
+
+						if (candidates.length > 0) {
+							let selected = candidates[0];
+							if (candidates.length > 1) {
+								const majinCand = candidates.find((c) => c.key === 'majin');
+								const cbr0Cand = candidates.find((c) => c.key === 'cbr0');
+								const cbr1Cand = candidates.find((c) => c.key === 'cbr1');
+								const bestCbr = cbr0Cand || cbr1Cand;
+
+								const has1080p = candidates.some((c) => c.is1080p);
+								if (has1080p) {
+									if (majinCand && !majinCand.is1080p && bestCbr?.is1080p) {
+										selected = bestCbr;
+									} else if (majinCand && bestCbr) {
+										if (
+											majinCand.actualBps > bestCbr.declaredBps ||
+											(majinCand.declaredBps > bestCbr.declaredBps && (majinCand.actualBps === 0 || majinCand.actualBps >= 7500000))
+										) {
+											selected = majinCand;
+										} else {
+											selected = bestCbr;
 										}
-									} else {
-										// CBR 1080p beats or equals Majin 1080p
-										const delta = cbr1080Kbps - (majinDeclaredKbps || majinActualKbps);
-										console.info(
-											`[Majin] Standard CBR 1080p (${cbr1080Kbps} kbps) beats or equals Majin (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}, delta: -${delta} kbps). Keeping standard stream.`
-										);
-										majinStatus = `DISABLED (CBR ${cbr1080Kbps} kbps >= Majin ${majinDeclaredKbps || majinActualKbps} kbps)`;
-									}
-								} else if (cbrMaxKbps > 0) {
-									// Non-1080p content (e.g. classic SD 480p like Dragon Ball)
-									if (majinActualBps > cbrMaxBps || (majinDeclaredBps > cbrMaxBps && (majinActualKbps === 0 || majinActualKbps >= 2000))) {
-										const delta = (majinDeclaredKbps || majinActualKbps) - cbrMaxBps;
-										console.info(
-											`[Majin] Majin (${majinDeclaredKbps} kbps MPD${majinActualKbps > 0 ? ` / ${majinActualKbps} kbps actual` : ''}) beats standard CBR (${cbrMaxKbps} kbps) by +${delta} kbps. Automatically enabling Majin mode.`
-										);
-										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinDeclaredKbps} kbps MPD vs CBR ${cbrMaxKbps} kbps, +${delta} kbps)`;
-										for (const key in derivedPlaystreams) {
-											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
-										}
-									} else {
-										console.info(`[Majin] Standard CBR (${cbrMaxKbps} kbps) beats or equals Majin (${majinDeclaredKbps} kbps MPD). Keeping standard stream.`);
-										majinStatus = `DISABLED (CBR ${cbrMaxKbps} kbps >= Majin ${majinDeclaredKbps} kbps)`;
+									} else if (majinCand) {
+										selected = majinCand;
+									} else if (bestCbr) {
+										selected = bestCbr;
 									}
 								} else {
-									// CBR stream could not be parsed, fallback to catalog dataset baseline (~11,000 kbps average CBR)
-									const benchmarkThreshold = 11000;
-									const effectiveKbps = majinActualKbps > 0 ? majinActualKbps : majinDeclaredKbps;
-									if (effectiveKbps >= benchmarkThreshold) {
-										console.info(
-											`[Majin] Candidate stream qualifies based on quality baseline (${majinDeclaredKbps} kbps MPD / ${majinActualKbps} kbps actual, threshold: ${benchmarkThreshold} kbps). Automatically enabling Majin mode.`
-										);
-										options.majin = true;
-										majinStatus = `ENABLED (auto: ${majinActualKbps > 0 ? `${majinActualKbps} kbps actual` : `${majinDeclaredKbps} kbps`})`;
-										for (const key in derivedPlaystreams) {
-											derivedPlaystreams[key].url = this.applyMajinTransform(derivedPlaystreams[key].url);
+									if (majinCand && bestCbr) {
+										if (majinCand.actualBps > bestCbr.declaredBps || (majinCand.declaredBps > bestCbr.declaredBps && majinCand.actualBps >= 2000000)) {
+											selected = majinCand;
+										} else {
+											selected = bestCbr;
 										}
-									} else {
-										console.info(
-											`[Majin] Candidate stream rejected: below quality threshold (actual: ${majinActualKbps} kbps, MPD: ${majinDeclaredKbps} kbps, threshold: 7500 kbps). Keeping standard stream.`
-										);
-										majinStatus = `DISABLED (Majin ${majinActualKbps || majinDeclaredKbps} kbps < 7500 kbps)`;
+									} else if (majinCand) {
+										selected = majinCand;
+									} else if (bestCbr) {
+										selected = bestCbr;
 									}
 								}
-							} else {
-								console.info('[Majin] Stream manifest is not valid MPD, keeping standard stream.');
-								majinStatus = 'DISABLED (invalid MPD)';
 							}
+
+							console.info('\n[Stream Comparison] Head-to-head stream evaluation:');
+							console.info('┌────────────┬─────────────────────────┬───────────┬────────────────┬────────────────┬────────────────┐');
+							console.info('│ Status     │ Stream                  │ Res       │ Declared BW    │ Actual Bitrate │ Est Video Size │');
+							console.info('├────────────┼─────────────────────────┼───────────┼────────────────┼────────────────┼────────────────┤');
+							for (const c of candidates) {
+								const s = (c === selected ? '[SELECTED]' : '[SKIPPED]').padEnd(10);
+								const name = c.name.padEnd(23);
+								const res = `${c.resWidth}x${c.resHeight}`.padEnd(9);
+								const decl = `${Math.round(c.declaredBps / 1000)} kbps`.padEnd(14);
+								const act = `${Math.round(c.actualBps / 1000)} kbps`.padEnd(14);
+								const sz = formatBytes(c.estFileSizeBytes).padEnd(14);
+								console.info(`│ ${s} │ ${name} │ ${res} │ ${decl} │ ${act} │ ${sz} │`);
+							}
+							console.info('└────────────┴─────────────────────────┴───────────┴────────────────┴────────────────┴────────────────┘');
+
+							for (const key in derivedPlaystreams) {
+								derivedPlaystreams[key].url = selected.transform(derivedPlaystreams[key].url);
+							}
+							options.majin = selected.key === 'majin';
+							majinStatus =
+								selected.key === 'majin'
+									? `ENABLED (auto: ${Math.round(selected.actualBps / 1000)} kbps actual)`
+									: `DISABLED (auto: ${selected.name} chosen @ ${Math.round(selected.declaredBps / 1000)} kbps)`;
 						} else {
-							console.info(`[Majin] Stream not available (${majinReq.res ? `HTTP ${majinReq.res.status}` : 'request failed'}). Keeping standard stream.`);
-							majinStatus = `DISABLED (HTTP ${majinReq.res?.status ?? 'error'})`;
+							console.warn('[Stream Comparison] No stream candidate could be parsed as MPD. Using default stream.');
 						}
 					}
 				}
@@ -2292,18 +2347,28 @@ export default class Crunchy implements ServiceClass {
 						const aselectedServer = astreamServers[options.x - 1];
 						const aselectedList = astreamPlaylists[aselectedServer];
 
+						const durationSec =
+							parseISODuration(vstreamPlaylistBody.match(/mediaPresentationDuration="([^"]+)"/)?.[1]) ||
+							(medias?.data?.[0]?.durationMs ? medias.data[0].durationMs / 1000 : 0);
+
 						//set Video Qualities
 						const videos = vselectedList.video.map((item) => {
+							const estBytes = durationSec > 0 ? Math.round((item.bandwidth * durationSec) / 8) : 0;
+							const sizeStr = estBytes > 0 ? `~${formatBytes(estBytes)}` : '';
 							return {
 								...item,
-								resolutionText: `${item.quality.width}x${item.quality.height} (${Math.round(item.bandwidth / 1024)}KiB/s)`
+								resolutionText: sizeStr
+									? `${item.quality.width}x${item.quality.height} (${sizeStr} | ${Math.round(item.bandwidth / 1024)}KiB/s)`
+									: `${item.quality.width}x${item.quality.height} (${Math.round(item.bandwidth / 1024)}KiB/s)`
 							};
 						});
 
 						const audios = aselectedList.audio.map((item) => {
+							const estAudioBytes = durationSec > 0 ? Math.round((item.bandwidth * durationSec) / 8) : 0;
+							const sizeStr = estAudioBytes > 0 ? ` (~${formatBytes(estAudioBytes)})` : '';
 							return {
 								...item,
-								resolutionText: `${Math.round(item.bandwidth / 1000)}kB/s`
+								resolutionText: `${Math.round(item.bandwidth / 1000)}kB/s${sizeStr}`
 							};
 						});
 
@@ -2384,8 +2449,11 @@ export default class Crunchy implements ServiceClass {
 							console.error(`Unable to find language for code ${acurStream.audio_lang}`);
 							return;
 						}
+						const estTotalBytes = durationSec > 0 ? Math.round(((chosenVideoSegments.bandwidth + chosenAudioSegments.bandwidth) * durationSec) / 8) : 0;
+						const totalSizeStr = estTotalBytes > 0 ? `\n\tEstimated Total Download: ~${formatBytes(estTotalBytes)}` : '';
+
 						console.info(
-							`Selected quality: \n\tVideo: ${chosenVideoSegments.resolutionText} [vstream: ${options.vstream}, majin: ${options.majin ? 'ON' : 'OFF'}]\n\tAudio: ${chosenAudioSegments.resolutionText} [astream: ${options.astream}]\n\tVideo Server: ${vselectedServer}\n\tAudio Server: ${aselectedServer}`
+							`Selected quality: \n\tVideo: ${chosenVideoSegments.resolutionText} [vstream: ${options.vstream}, majin: ${options.majin ? 'ON' : 'OFF'}]\n\tAudio: ${chosenAudioSegments.resolutionText} [astream: ${options.astream}]${totalSizeStr}\n\tVideo Server: ${vselectedServer}\n\tAudio Server: ${aselectedServer}`
 						);
 						console.info('Stream URL:', chosenVideoSegments.segments[0].uri.split(',.urlset')[0]);
 						// TODO check filename

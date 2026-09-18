@@ -54,6 +54,7 @@ export let argvC: {
 	cstream: keyof typeof CrunchyVideoPlayStreams;
 	vstream: keyof typeof CrunchyVideoPlayStreams;
 	astream: keyof typeof CrunchyAudioPlayStreams;
+	majin: boolean | undefined;
 	tsd: boolean | undefined;
 	partsize: number;
 	hslang: string;

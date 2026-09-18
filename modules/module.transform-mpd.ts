@@ -79,6 +79,17 @@ export function parseISODuration(durationStr?: string): number {
 	return hours * 3600 + minutes * 60 + seconds;
 }
 
+export function formatBytes(bytes: number): string {
+	if (!bytes || bytes <= 0 || isNaN(bytes)) return '0 B';
+	if (bytes >= 1024 * 1024 * 1024) {
+		return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
+	}
+	if (bytes >= 1024 * 1024) {
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+	return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
 export async function parse(manifest: string, language?: LanguageItem, url?: string) {
 	if (!manifest.includes('BaseURL') && url) {
 		manifest = manifest.replace(/(<MPD*\b[^>]*>)/gm, `$1<BaseURL>${url}</BaseURL>`);

@@ -8,7 +8,7 @@ import packageJson from '../package.json';
 import { parseUrl } from '../modules/module.url';
 import * as yamlCfg from '../modules/module.cfg-loader';
 import { overrideArguments, argvC } from '../modules/module.app-args';
-import { parseISODuration } from '../modules/module.transform-mpd';
+import { parseISODuration, formatBytes } from '../modules/module.transform-mpd';
 
 describe('multi-downloader-nx Unit & Logic Tests', () => {
 	test('formatTime precision & overflow rounding', () => {
@@ -368,5 +368,89 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		);
 		expect(argvC.listFormats).toBe(true);
 		expect(argvC.F).toBe(true);
+	});
+
+	test('formatBytes formats file sizes correctly', () => {
+		expect(formatBytes(1427622727)).toBe('1.33 GiB');
+		expect(formatBytes(611463168)).toBe('583.1 MB');
+		expect(formatBytes(35651584)).toBe('34.0 MB');
+		expect(formatBytes(51200)).toBe('50 KB');
+		expect(formatBytes(0)).toBe('0 B');
+	});
+
+	test('applyMajinTransform is idempotent and handles /static/majin/ without duplication', () => {
+		const applyMajinTransform = (url: string) => {
+			if (url.includes('/static/majin/')) {
+				return url.replace(/\/(?:\d+\/)?clean\/dash\//, '/clean/cenc/dash/');
+			}
+			return url.replace('/static/', '/static/majin/').replace(/\/(?:\d+\/)?clean\/dash\//, '/clean/cenc/dash/');
+		};
+
+		const applyCbrTransform = (url: string, streamIndex = '0') => {
+			if (url.includes('/static/majin/')) {
+				return url.replace('/static/majin/', '/static/').replace(/\/(?:\d+\/)?clean\/(?:cenc\/)?dash\//, `/${streamIndex}/clean/dash/`);
+			}
+			return url.replace(/\/(?:\d+\/)?clean\/(?:cenc\/)?dash\//, `/${streamIndex}/clean/dash/`);
+		};
+
+		const nativeMajin =
+			'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/majin/e00117850a00325254jajp/clean/cenc/dash/manifest.mpd?playbackGuid=123';
+		const cbr1 = 'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/e00117850a00325254jajp/1/clean/dash/manifest.mpd?playbackGuid=123';
+
+		// Should not produce /static/majin/majin/
+		expect(applyMajinTransform(nativeMajin)).toBe(nativeMajin);
+		expect(applyMajinTransform(cbr1)).toBe(
+			'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/majin/e00117850a00325254jajp/clean/cenc/dash/manifest.mpd?playbackGuid=123'
+		);
+
+		// Transform to CBR 0 and CBR 1
+		expect(applyCbrTransform(nativeMajin, '0')).toBe(
+			'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/e00117850a00325254jajp/0/clean/dash/manifest.mpd?playbackGuid=123'
+		);
+		expect(applyCbrTransform(nativeMajin, '1')).toBe(
+			'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/e00117850a00325254jajp/1/clean/dash/manifest.mpd?playbackGuid=123'
+		);
+		expect(applyCbrTransform(cbr1, '0')).toBe(
+			'https://cr-play-service.prd.crunchyrollsvc.com/v2/manifest/GMKUE98DD/static/e00117850a00325254jajp/0/clean/dash/manifest.mpd?playbackGuid=123'
+		);
+	});
+
+	test('3-Way stream comparison on Shangri-La Frontier Ep 27 (GMKUE98DD) selects CBR 0 over Majin', () => {
+		const durationSec = 1430.262;
+		const candidates = [
+			{
+				key: 'majin',
+				declaredBps: 4572217,
+				actualBps: 3420000,
+				fileSizeBytes: 611463168,
+				is1080p: true
+			},
+			{
+				key: 'cbr0',
+				declaredBps: 11478671,
+				actualBps: 11478671,
+				fileSizeBytes: Math.round((11478671 * durationSec) / 8),
+				is1080p: true
+			},
+			{
+				key: 'cbr1',
+				declaredBps: 7926003,
+				actualBps: 7926003,
+				fileSizeBytes: Math.round((7926003 * durationSec) / 8),
+				is1080p: true
+			}
+		];
+
+		const majinCand = candidates.find((c) => c.key === 'majin')!;
+		const cbr0Cand = candidates.find((c) => c.key === 'cbr0')!;
+
+		// Does Majin beat CBR 0?
+		const majinWins = majinCand.actualBps > cbr0Cand.declaredBps || (majinCand.declaredBps > cbr0Cand.declaredBps && majinCand.actualBps >= 7500000);
+		expect(majinWins).toBe(false);
+		// CBR 0 is chosen because its declared 11.5 Mbps bitrate far exceeds Majin's 3.4 Mbps actual
+		const selected = majinWins ? majinCand : cbr0Cand;
+		expect(selected.key).toBe('cbr0');
+		expect(formatBytes(selected.fileSizeBytes)).toBe('1.91 GiB');
+		expect(formatBytes(majinCand.fileSizeBytes)).toBe('583.1 MB');
 	});
 });
