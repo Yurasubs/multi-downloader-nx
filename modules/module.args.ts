@@ -364,6 +364,15 @@ const args: TAppArg<boolean | number | string | unknown[]>[] = [
 		}
 	},
 	{
+		name: 'cbr',
+		group: 'dl',
+		describe: 'Force CBR stream instead of auto-evaluation (0 = High-Bitrate, 1 = Standard)',
+		docDescribe: true,
+		service: ['crunchy'],
+		type: 'string',
+		usage: '[0|1]'
+	},
+	{
 		name: 'tsd',
 		group: 'dl',
 		describe: '(Total Session Death) Kills all active Crunchyroll Streaming Sessions to prevent getting the "TOO_MANY_ACTIVE_STREAMS" error.',

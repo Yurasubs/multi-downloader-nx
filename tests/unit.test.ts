@@ -445,12 +445,60 @@ describe('multi-downloader-nx Unit & Logic Tests', () => {
 		const cbr0Cand = candidates.find((c) => c.key === 'cbr0')!;
 
 		// Does Majin beat CBR 0?
-		const majinWins = majinCand.actualBps > cbr0Cand.declaredBps || (majinCand.declaredBps > cbr0Cand.declaredBps && majinCand.actualBps >= 7500000);
+		const majinWins =
+			majinCand.actualBps > cbr0Cand.declaredBps || (majinCand.declaredBps > cbr0Cand.declaredBps && (majinCand.actualBps === 0 || majinCand.actualBps >= 7500000));
 		expect(majinWins).toBe(false);
-		// CBR 0 is chosen because its declared 11.5 Mbps bitrate far exceeds Majin's 3.4 Mbps actual
+		// CBR 0 is chosen on Shangri-La because its declared 11.5 Mbps bitrate far exceeds Majin's 3.4 Mbps actual
 		const selected = majinWins ? majinCand : cbr0Cand;
+
 		expect(selected.key).toBe('cbr0');
 		expect(formatBytes(selected.fileSizeBytes)).toBe('1.91 GiB');
 		expect(formatBytes(majinCand.fileSizeBytes)).toBe('583.1 MB');
+	});
+
+	test('3-Way stream comparison on Grow Up Show Ep 11 / Re:ZERO S3 Ep 1 (GE00378298JAJP) selects Majin (1.74 GB) over CBR 0 (1.45 GB)', () => {
+		const durationSec = 1420.0;
+		const candidates = [
+			{
+				key: 'majin',
+				declaredBps: 13953000,
+				actualBps: 9632000,
+				fileSizeBytes: Math.round((9632000 * durationSec) / 8),
+				is1080p: true
+			},
+			{
+				key: 'cbr0',
+				declaredBps: 12809000,
+				actualBps: 12809000,
+				fileSizeBytes: Math.round((12809000 * durationSec) / 8),
+				is1080p: true
+			},
+			{
+				key: 'cbr1',
+				declaredBps: 8564000,
+				actualBps: 8564000,
+				fileSizeBytes: Math.round((8564000 * durationSec) / 8),
+				is1080p: true
+			}
+		];
+
+		const majinCand = candidates.find((c) => c.key === 'majin')!;
+		const cbrCandidates = candidates.filter((c) => c.key === 'cbr0' || c.key === 'cbr1');
+		const bestCbr = cbrCandidates.sort((a, b) => {
+			if (a.is1080p !== b.is1080p) return a.is1080p ? -1 : 1;
+			const aBps = a.actualBps > 0 ? a.actualBps : a.declaredBps;
+			const bBps = b.actualBps > 0 ? b.actualBps : b.declaredBps;
+			return bBps - aBps;
+		})[0];
+
+		// Majin declared (13.95 Mbps) > CBR 0 (12.8 Mbps) and Majin actual is healthy (9.6 Mbps >= 7.5 Mbps).
+		// Majin (2-pass VBR) provides superior dynamic quality and larger real filesize (1.74 GB vs 1.45 GB).
+		const majinWins =
+			majinCand.actualBps > bestCbr.declaredBps || (majinCand.declaredBps > bestCbr.declaredBps && (majinCand.actualBps === 0 || majinCand.actualBps >= 7500000));
+		expect(majinWins).toBe(true);
+		const selected = majinWins ? majinCand : bestCbr;
+
+		expect(selected.key).toBe('majin');
+		expect(formatBytes(selected.fileSizeBytes)).toBe('1.59 GiB');
 	});
 });

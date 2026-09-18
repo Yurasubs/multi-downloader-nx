@@ -1852,7 +1852,15 @@ export default class Crunchy implements ServiceClass {
 					subtitles: videoStream.subtitles,
 					versions: videoStream.versions
 				};
-				if (options.majin) {
+				if (options.cbr !== undefined) {
+					const cbrIndex = options.cbr === '1' ? '1' : '0';
+					majinStatus = `DISABLED (manual --cbr ${cbrIndex})`;
+					console.info(`[CBR] Forcing CBR stream ${cbrIndex} (manual flag), transforming video stream URLs`);
+					for (const key in derivedPlaystreams) {
+						derivedPlaystreams[key].url = this.applyCbrTransform(derivedPlaystreams[key].url, cbrIndex);
+					}
+					options.majin = false;
+				} else if (options.majin) {
 					majinStatus = 'ENABLED (manual flag)';
 					console.info('[Majin] Majin quality mode enabled (manual flag), transforming video stream URLs');
 					for (const key in derivedPlaystreams) {
@@ -1995,15 +2003,23 @@ export default class Crunchy implements ServiceClass {
 							let selected = candidates[0];
 							if (candidates.length > 1) {
 								const majinCand = candidates.find((c) => c.key === 'majin');
-								const cbr0Cand = candidates.find((c) => c.key === 'cbr0');
-								const cbr1Cand = candidates.find((c) => c.key === 'cbr1');
-								const bestCbr = cbr0Cand || cbr1Cand;
+								const cbrCandidates = candidates.filter((c) => c.key === 'cbr0' || c.key === 'cbr1');
+								const bestCbr = cbrCandidates.sort((a, b) => {
+									if (a.is1080p !== b.is1080p) return a.is1080p ? -1 : 1;
+									const aBps = a.actualBps > 0 ? a.actualBps : a.declaredBps;
+									const bBps = b.actualBps > 0 ? b.actualBps : b.declaredBps;
+									return bBps - aBps;
+								})[0];
 
-								const has1080p = candidates.some((c) => c.is1080p);
-								if (has1080p) {
-									if (majinCand && !majinCand.is1080p && bestCbr?.is1080p) {
+								if (majinCand && bestCbr) {
+									if (majinCand.is1080p && !bestCbr.is1080p) {
+										selected = majinCand;
+									} else if (!majinCand.is1080p && bestCbr.is1080p) {
 										selected = bestCbr;
-									} else if (majinCand && bestCbr) {
+									} else {
+										// Majin declaredBps represents the peak buffer tier from Bitmovin VBR.
+										// When Majin declaredBps > bestCbr.declaredBps and actual bitrate is healthy (>= 7.5 Mbps),
+										// Majin provides superior visual quality (2-pass VBR) and larger true filesize than CBR.
 										if (
 											majinCand.actualBps > bestCbr.declaredBps ||
 											(majinCand.declaredBps > bestCbr.declaredBps && (majinCand.actualBps === 0 || majinCand.actualBps >= 7500000))
@@ -2012,27 +2028,19 @@ export default class Crunchy implements ServiceClass {
 										} else {
 											selected = bestCbr;
 										}
-									} else if (majinCand) {
-										selected = majinCand;
-									} else if (bestCbr) {
-										selected = bestCbr;
 									}
-								} else {
-									if (majinCand && bestCbr) {
-										if (majinCand.actualBps > bestCbr.declaredBps || (majinCand.declaredBps > bestCbr.declaredBps && majinCand.actualBps >= 2000000)) {
-											selected = majinCand;
-										} else {
-											selected = bestCbr;
-										}
-									} else if (majinCand) {
-										selected = majinCand;
-									} else if (bestCbr) {
-										selected = bestCbr;
-									}
+								} else if (majinCand) {
+									selected = majinCand;
+								} else if (bestCbr) {
+									selected = bestCbr;
 								}
 							}
 
-							console.info('\n[Stream Comparison] Head-to-head stream evaluation:');
+							const durMin = Math.floor(durationSec / 60);
+							const durSecRem = Math.round(durationSec % 60);
+							const durFormatted = durationSec > 0 ? ` (Duration: ${durMin}m ${durSecRem}s)` : '';
+
+							console.info(`\n[Stream Comparison] Head-to-head stream evaluation${durFormatted}:`);
 							console.info('┌────────────┬─────────────────────────┬───────────┬────────────────┬────────────────┬────────────────┐');
 							console.info('│ Status     │ Stream                  │ Res       │ Declared BW    │ Actual Bitrate │ Est Video Size │');
 							console.info('├────────────┼─────────────────────────┼───────────┼────────────────┼────────────────┼────────────────┤');
